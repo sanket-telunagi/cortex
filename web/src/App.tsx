@@ -56,7 +56,7 @@ export default function App() {
   // WebSocket Live Telemetry Connection
   useEffect(() => {
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const host = window.location.host || 'localhost:8080';
+    const host = window.location.host;
     const wsUrl = `${protocol}//${host}/api/network/telemetry/ws`;
 
     const ws = new WebSocket(wsUrl);
@@ -184,7 +184,7 @@ export default function App() {
           <div className="flex items-center justify-between pt-1 border-t border-gray-800 text-[10px] text-gray-400 font-mono">
             <span>RAM Ephemeral: Active</span>
             <span className={wsConnected ? "text-emerald-400" : "text-amber-400"}>
-              {wsConnected ? "● 60 FPS WSS" : "○ Reconnecting"}
+              {wsConnected ? "â— 60 FPS WSS" : "â—‹ Reconnecting"}
             </span>
           </div>
         </div>
