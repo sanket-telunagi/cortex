@@ -1,39 +1,114 @@
-# Prerequisites & Requirements for Agentic Coding
+# Cortex Studio (Cortex Workbench)
 
-To enable AI agents to produce robust, high-quality, production-grade code autonomously, the workspace is organized around 5 foundational pillars:
-
----
-
-## 1. Context & Agent Directives (`AGENTS.md`)
-- **System Instructions**: Define coding standards, architectural invariants, prohibited patterns, and styling guidelines.
-- **Decision Records**: Keep architecture decision records (`docs/ADR/`) so agents understand *why* things were built a certain way.
-- **Specification-First Flow**: Keep task specs, requirements, and state logs (`docs/TASKS.md`) for persistent cross-session memory.
+> **The Zero-Knowledge, Single-Binary Extensible Infrastructure Workbench**  
+> Consolidating Databases, Multi-Hop SSH Bastions, Proxy Chaining, Telemetry, and Model Context Protocol (MCP) into an ultra-low latency standalone executable.
 
 ---
 
-## 2. Deterministic Verification Loops (The Agent's "Eyes")
-AI agents rely on objective machine feedback to self-correct:
-- **Strict Static Typing**: (e.g., TypeScript strict mode, Pyright / Mypy, Rust typechecker).
-- **Fast Linters & Formatters**: (e.g., Biome, ESLint, Ruff, Clippy) to immediately catch syntax and semantic errors.
-- **Automated Test Runners**: Fast unit and integration tests (e.g., Vitest, Jest, Pytest, Cargo Test) with high test coverage.
-- **One-Step Validation Script**: A single command (e.g., `npm run check`, `just check`, or `make test`) that runs lint + typecheck + tests before finalizing any task.
+## ⚡ Key Highlights
+
+- **Single Portable Binary**: Zero host prerequisites. Embedded static React 19 UI inside a standalone native Go binary (`bin/cortex.exe`).
+- **Zero-Knowledge Security**: Secrets, private keys, and passwords are encrypted client-side with AES-256-GCM. The central backend and hosting provider never see plaintext secrets.
+- **Arbitrary Multi-Hop Chaining**: Connect to databases and servers across complex multi-hop bastions and proxies (`Client -> SOCKS5/HTTP Proxy -> SSH Bastion 1 -> SSH Bastion 2 -> Target DB`).
+- **Real-Time Per-Hop Latency Telemetry**: 60 FPS WebSocket push updates showing instantaneous latency (RTT) for every discrete hop, pinpointing network bottlenecks immediately.
+- **Built-In Model Context Protocol (MCP)**: Native MCP server exposing infrastructure discovery, connection testing, and read-only querying to AI agents (Claude, Cursor, Zed, Antigravity).
 
 ---
 
-## 3. Isolated & Deterministic Environments
-- **Strict Package Lockfiles**: (`pnpm-lock.yaml`, `uv.lock`, `Cargo.lock`) to avoid drifting dependencies.
-- **Environment Variable Isolation**: `.env.example` templates with validated schema parsers (e.g., Zod or Pydantic).
-- **Containerization / Dev Containers**: (Optional) `.devcontainer/` or Docker for reproducible OS-level dependencies.
+## 📁 Repository Structure
+
+```
+ZedWorkspace/
+├── cmd/
+│   └── cortex/                 # Main executable entry point & embedded web assets (`main.go`)
+│
+├── internal/
+│   ├── kernel/                 # Microkernel event bus, extension registry & lifecycle
+│   ├── tunnel/                 # Multi-hop dialer pipeline & real-time telemetry monitor
+│   ├── crypto/                 # Server-side verification & envelope utils
+│   ├── store/                  # Ephemeral in-memory session vault
+│   └── server/                 # HTTP/WebSocket gateway
+│
+├── pkg/
+│   └── plugin/                 # Public Cortex Plugin SDK & interfaces
+│
+├── plugins/                    # Independent Modular Extensions
+│   ├── ext_network/            # Universal multi-hop SSH & proxy chaining hub
+│   ├── ext_ssh/                # Dedicated SSH bastion & PTY session manager
+│   ├── ext_db/                 # Database explorer (Postgres, MySQL, SQLite, Redis)
+│   └── ext_mcp/                # Model Context Protocol (MCP) gateway for AI agents
+│
+├── web/                        # Modern Web Application (React 19, TypeScript, TailwindCSS)
+│   ├── src/
+│   │   ├── core/               # UI shell microkernel
+│   │   ├── crypto/             # WebCrypto client-side AES-256-GCM vault
+│   │   ├── components/         # Dashboard visualizers & virtual tables
+│   │   └── plugins/            # Frontend companion extensions
+│   ├── package.json
+│   └── vite.config.ts
+│
+├── docs/                       # Project Specifications
+│   ├── ARCHITECTURE.md         # System design and component map
+│   ├── CORTEX_BLUEPRINT.md     # Architectural blueprint and milestones
+│   ├── PLAN.md                 # Implementation roadmap
+│   ├── SECURITY.md             # Cryptographic vault & zero-knowledge threat model
+│   └── TASKS.md                # Task tracking
+│
+├── graphify-out/               # Graphify Codebase Knowledge Graph
+│   ├── graph.json              # Extracted AST graph (201 nodes, 292 edges)
+│   └── GRAPH_REPORT.md         # Architectural communities & graph analysis
+│
+├── build.ps1                   # One-step automated build script
+├── test.ps1                    # One-step diagnostics & test runner
+├── Makefile                    # Standard multi-platform Makefile
+├── AGENTS.md                   # Operational guidelines for AI agents
+└── README.md
+```
 
 ---
 
-## 4. Source Control & Diff Hygiene
-- **Granular Git Commits**: Logical, atomic commits with conventional commit messages (`feat:`, `fix:`, `refactor:`, `test:`).
-- **Comprehensive `.gitignore`**: Preventing logs, build artifacts, and secret leakage.
-- **CI Workflows**: GitHub Actions / GitLab CI executing identical verification steps.
+## 🚀 Quickstart
+
+### 1. Build the Standalone Binary
+
+```powershell
+.\build.ps1
+```
+
+Or using Make:
+```bash
+make build
+```
+
+This compiles the web frontend, embeds the assets into Go, and outputs the standalone executable `bin/cortex.exe` (~10.5 MB).
+
+### 2. Run Cortex Studio
+
+```powershell
+.\bin\cortex.exe
+```
+
+Open your browser at **`http://localhost:8080`**.
+
+### 3. Run Automated Tests
+
+```powershell
+.\test.ps1
+```
 
 ---
 
-## 5. Tooling & MCP (Model Context Protocol) Integration
-- **Specialized Skills / Scripts**: Automated benchmark, migration, or domain-specific code generation scripts.
-- **Knowledge Graph / Indexing**: Agent memory indexes (like Graphify) for large-scale codebase navigation.
+## 🤖 Querying the Codebase Knowledge Graph (Graphify)
+
+A complete knowledge graph of the codebase has been generated using `graphify`. You can query it anytime:
+
+```powershell
+# Plain-language explanation of any node
+graphify explain "PipelineEngine"
+
+# Shortest path between components
+graphify path "PipelineEngine" "MCPExtension"
+
+# List most connected architectural hubs
+graphify god-nodes
+```
