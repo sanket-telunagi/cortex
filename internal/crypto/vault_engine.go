@@ -213,6 +213,16 @@ func (v *VaultEngine) ScrubResponse(response string) string {
 		if len(rawVal) > 4 && strings.Contains(scrubbed, rawVal) {
 			scrubbed = strings.ReplaceAll(scrubbed, rawVal, string(handle)+"[REDACTED]")
 		}
+		// Also scrub extracted password component if URI
+		if strings.Contains(rawVal, "://") && strings.Contains(rawVal, "@") {
+			parts := strings.Split(rawVal, "@")[0]
+			if colonIdx := strings.LastIndex(parts, ":"); colonIdx != -1 {
+				pass := parts[colonIdx+1:]
+				if len(pass) > 4 && strings.Contains(scrubbed, pass) {
+					scrubbed = strings.ReplaceAll(scrubbed, pass, "[REDACTED]")
+				}
+			}
+		}
 	}
 	return scrubbed
 }
