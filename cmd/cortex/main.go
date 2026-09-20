@@ -1,12 +1,15 @@
-﻿package main
+package main
 
 import (
 	"embed"
+	"flag"
 	"fmt"
 	"io/fs"
 	"log"
+	"net"
 	"net/http"
 	"os"
+	"strconv"
 	"time"
 
 	"github.com/cortex-studio/cortex/internal/kernel"
@@ -19,14 +22,57 @@ import (
 //go:embed all:dist
 var embeddedWeb embed.FS
 
+// findAvailablePort searches starting from startPort up to maxAttempts to find a free port.
+func findAvailablePort(startPort int, maxAttempts int) (net.Listener, int, error) {
+	for p := startPort; p < startPort+maxAttempts; p++ {
+		addr := fmt.Sprintf("0.0.0.0:%d", p)
+		listener, err := net.Listen("tcp", addr)
+		if err == nil {
+			return listener, p, nil
+		}
+	}
+	return nil, 0, fmt.Errorf("no free port found in range %d-%d", startPort, startPort+maxAttempts)
+}
+
 func main() {
-	port := os.Getenv("PORT")
-	if port == "" {
-		port = "8080"
+	portFlag := flag.Int("port", 0, "Custom port to bind the server on (default: 8080 or next free port)")
+	flag.IntVar(portFlag, "p", 0, "Custom port (shorthand)")
+	autoPort := flag.Bool("auto-port", true, "Automatically fallback to next free port if preferred port is in use")
+	flag.Parse()
+
+	preferredPort := 8080
+	if *portFlag > 0 {
+		preferredPort = *portFlag
+	} else if envPort := os.Getenv("PORT"); envPort != "" {
+		if p, err := strconv.Atoi(envPort); err == nil {
+			preferredPort = p
+		}
 	}
 
 	fmt.Println("Cortex Studio - The Zero-Knowledge Infrastructure Workbench")
-	fmt.Printf("Initializing Microkernel on port :%s...\n", port)
+
+	var listener net.Listener
+	var actualPort int
+	var err error
+
+	if *autoPort {
+		listener, actualPort, err = findAvailablePort(preferredPort, 100)
+		if err != nil {
+			log.Fatalf("Failed to bind port: %v", err)
+		}
+	} else {
+		addr := fmt.Sprintf("0.0.0.0:%d", preferredPort)
+		listener, err = net.Listen("tcp", addr)
+		if err != nil {
+			log.Fatalf("Port %d is already in use: %v", preferredPort, err)
+		}
+		actualPort = preferredPort
+	}
+
+	fmt.Printf("Microkernel listening on 0.0.0.0:%d\n", actualPort)
+	if actualPort != preferredPort {
+		fmt.Printf("(Port %d was occupied; automatically assigned to %d)\n", preferredPort, actualPort)
+	}
 
 	bus := kernel.NewEventBus()
 	registry := kernel.NewRegistry(bus)
@@ -48,18 +94,14 @@ func main() {
 		log.Fatalf("failed registering ext_mcp: %v", err)
 	}
 
-	fmt.Printf("Loaded %d extensions:\n", len(registry.All()))
-	for _, ext := range registry.All() {
-		fmt.Printf("   - [%s] %s (v%s)\n", ext.ID(), ext.Name(), ext.Version())
-	}
-
 	mux := http.NewServeMux()
-	registry.RegisterAllRoutes(mux)
 
 	mux.HandleFunc("/api/health", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		fmt.Fprintf(w, `{"status":"online","timestamp":"%s"}`, time.Now().UTC().Format(time.RFC3339))
+		fmt.Fprintf(w, `{"status":"online","port":%d,"timestamp":"%s"}`, actualPort, time.Now().Format(time.RFC3339))
 	})
+
+	registry.RegisterAllRoutes(mux)
 
 	distFS, err := fs.Sub(embeddedWeb, "dist")
 	if err == nil {
@@ -82,9 +124,8 @@ func main() {
 		})
 	}
 
-	addr := fmt.Sprintf("0.0.0.0:%s", port)
-	fmt.Printf("Server listening at http://localhost:%s\n", port)
-	if err := http.ListenAndServe(addr, mux); err != nil {
+	fmt.Printf("Dashboard accessible at:\n  - Local:   http://localhost:%d\n  - Network: http://<SERVER_IP>:%d\n\n", actualPort, actualPort)
+	if err := http.Serve(listener, mux); err != nil {
 		log.Fatalf("server error: %v", err)
 	}
 }
