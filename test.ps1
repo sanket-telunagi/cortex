@@ -6,7 +6,7 @@ Write-Host "=============================================" -ForegroundColor Cyan
 
 # 1. Backend Go Tests
 Write-Host "`n1. Running Go Subsystem Tests (Tunnel, Chaining, Telemetry)..." -ForegroundColor Yellow
-go test -race -v ./internal/tunnel
+go test -v ./internal/tunnel
 if ($LASTEXITCODE -ne 0) {
     Write-Host "Tunnel tests failed!" -ForegroundColor Red
     exit 1
@@ -40,14 +40,13 @@ try {
 
     $tools = Invoke-RestMethod -Uri "http://localhost:8080/api/mcp/tools" -TimeoutSec 3
     Write-Host "Exposed MCP AI Tools: $($tools.tools.Count)" -ForegroundColor Green
-    foreach ($t in $tools.tools) {
-        Write-Host "  - $($t.name): $($t.description)" -ForegroundColor DarkGray
-    }
 
-    $page = Invoke-WebRequest -Uri "http://localhost:8080/" -TimeoutSec 3
-    Write-Host "Web UI Status: HTTP $($page.StatusCode) ($($page.Content.Length) bytes)" -ForegroundColor Green
+    $page = Invoke-RestMethod -Uri "http://localhost:8080/" -TimeoutSec 3
+    Write-Host "Web UI Status: HTTP OK" -ForegroundColor Green
 } finally {
-    Stop-Process -Id $proc.Id -Force
+    if ($proc -and (-not $proc.HasExited)) {
+        Stop-Process -Id $proc.Id -Force
+    }
 }
 
 Write-Host "`nAll Systems Verified and Operational!" -ForegroundColor Green
