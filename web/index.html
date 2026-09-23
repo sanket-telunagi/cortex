@@ -11,6 +11,28 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+    <script>
+      tailwind.config = {
+        theme: {
+          extend: {
+            fontFamily: {
+              sans: ['"Plus Jakarta Sans"', 'sans-serif'],
+              mono: ['"JetBrains Mono"', 'monospace'],
+            },
+            colors: {
+              sidebarBg: '#ffffff',
+              dashboardBg: '#ffffff',
+              bannerBg: '#f7f6f0',
+              cardBg: '#ffffff',
+              cardDark: '#1c1b1f',
+              borderSoft: '#ecebe4',
+              badgeBg: '#f1f0e9',
+            },
+          },
+        },
+      }
+    </script>
     <style>
       html, body {
         height: 100%;
