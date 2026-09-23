@@ -25,6 +25,18 @@ type ChainDefinition struct {
 	TargetAddr  string             `json:"target_addr"`
 }
 
+// ActiveSession represents an open proxy or bastion forwarding session.
+type ActiveSession struct {
+	SessionID   string    `json:"session_id"`
+	ChainID     string    `json:"chain_id"`
+	TargetAddr  string    `json:"target_addr"`
+	ConnectedAt time.Time `json:"connected_at"`
+	BytesTx     int64     `json:"bytes_tx"`
+	BytesRx     int64     `json:"bytes_rx"`
+	LatencyMs   float64   `json:"latency_ms"`
+	Status      string    `json:"status"`
+}
+
 // NetworkExtension manages SSH connections, proxies, multi-hop chains, and live telemetry streaming.
 type NetworkExtension struct {
 	engine   *tunnel.PipelineEngine
@@ -33,14 +45,16 @@ type NetworkExtension struct {
 	mu       sync.RWMutex
 	chains   map[string]ChainDefinition
 	hops     map[string]tunnel.HopConfig
+	sessions map[string]*ActiveSession
 }
 
 func NewNetworkExtension(engine *tunnel.PipelineEngine, monitor *tunnel.TelemetryMonitor) *NetworkExtension {
 	ext := &NetworkExtension{
-		engine:  engine,
-		monitor: monitor,
-		chains:  make(map[string]ChainDefinition),
-		hops:    make(map[string]tunnel.HopConfig),
+		engine:   engine,
+		monitor:  monitor,
+		chains:   make(map[string]ChainDefinition),
+		hops:     make(map[string]tunnel.HopConfig),
+		sessions: make(map[string]*ActiveSession),
 	}
 
 	// Pre-populate with realistic starter demo nodes
@@ -66,8 +80,10 @@ func (n *NetworkExtension) Stop() error {
 
 func (n *NetworkExtension) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/api/network/hops", n.handleHops)
+	mux.HandleFunc("/api/network/hops/probe", n.handleProbeHop)
 	mux.HandleFunc("/api/network/chains", n.handleChains)
 	mux.HandleFunc("/api/network/test-chain", n.handleTestChain)
+	mux.HandleFunc("/api/network/tunnels/sessions", n.handleTunnelSessions)
 	mux.HandleFunc("/api/network/telemetry/ws", n.handleTelemetryWS)
 }
 
@@ -103,6 +119,36 @@ func (n *NetworkExtension) handleHops(w http.ResponseWriter, r *http.Request) {
 	}
 
 	http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+}
+
+func (n *NetworkExtension) handleProbeHop(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	var req struct {
+		HopID string `json:"hop_id"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	n.mu.RLock()
+	hop, exists := n.hops[req.HopID]
+	n.mu.RUnlock()
+	if !exists {
+		http.Error(w, "hop not found", http.StatusNotFound)
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+
+	metric := n.engine.MeasureHopLatency(ctx, hop)
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(metric)
 }
 
 func (n *NetworkExtension) handleChains(w http.ResponseWriter, r *http.Request) {
@@ -168,6 +214,18 @@ func (n *NetworkExtension) handleTestChain(w http.ResponseWriter, r *http.Reques
 		resp["error"] = err.Error()
 	}
 	_ = json.NewEncoder(w).Encode(resp)
+}
+
+func (n *NetworkExtension) handleTunnelSessions(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	n.mu.RLock()
+	defer n.mu.RUnlock()
+
+	sessionsList := make([]*ActiveSession, 0, len(n.sessions))
+	for _, s := range n.sessions {
+		sessionsList = append(sessionsList, s)
+	}
+	_ = json.NewEncoder(w).Encode(sessionsList)
 }
 
 func (n *NetworkExtension) handleTelemetryWS(w http.ResponseWriter, r *http.Request) {
@@ -301,4 +359,15 @@ func (n *NetworkExtension) registerDefaultHops() {
 		TargetAddr:  "10.0.12.99:5432",
 	}
 	n.monitor.TrackChain("chain-prod-db", n.chains["chain-prod-db"].Hops)
+
+	n.sessions["tun-sess-8812"] = &ActiveSession{
+		SessionID:   "tun-sess-8812",
+		ChainID:     "chain-prod-db",
+		TargetAddr:  "10.0.12.99:5432",
+		ConnectedAt: time.Now().Add(-24 * time.Minute),
+		BytesTx:     4194304,
+		BytesRx:     16777216,
+		LatencyMs:   13.8,
+		Status:      "ESTABLISHED",
+	}
 }
