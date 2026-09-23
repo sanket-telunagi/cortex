@@ -1,20 +1,20 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   Network, 
   Database, 
   Bot, 
-  Cpu, 
   ShieldCheck, 
   Activity, 
-  Plus, 
   ArrowRight, 
-  CheckCircle2, 
-  AlertTriangle, 
-  XCircle, 
-  Terminal, 
-  Sliders, 
-  Lock,
-  Layers
+  Search, 
+  MoreVertical, 
+  Menu, 
+  X, 
+  Play, 
+  Server, 
+  Zap, 
+  KeyRound, 
+  LogOut 
 } from 'lucide-react';
 
 interface HopMetric {
@@ -43,15 +43,34 @@ interface ChainConfig {
 }
 
 export default function App() {
-  const [activeTab, setActiveTab] = useState<'network' | 'database' | 'mcp'>('network');
-  const [metrics, setMetrics] = useState<Record<string, HopMetric[]>>({});
-  const [currentMetrics, setCurrentMetrics] = useState<HopMetric[]>([]);
+  const [activeTab, setActiveTab] = useState<'network' | 'database' | 'vault' | 'mcp'>('network');
+  const [, setMetrics] = useState<Record<string, HopMetric[]>>({});
+  const [, setCurrentMetrics] = useState<HopMetric[]>([]);
   const [chains, setChains] = useState<ChainConfig[]>([]);
-  const [selectedChain, setSelectedChain] = useState<string | null>('chain-prod-db');
   const [wsConnected, setWsConnected] = useState(false);
-  const [queryResult, setQueryResult] = useState<any>(null);
+  const [drawerOpen, setDrawerOpen] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+  
+  // Database Query State
+  const [sqlQuery, setSqlQuery] = useState("SELECT id, username, role, status, latency_ms, last_login FROM connections LIMIT 10;");
+  const [queryResult, setQueryResult] = useState<any>({
+    columns: ['id', 'username', 'role', 'status', 'latency_ms', 'last_login'],
+    rows: [
+      { id: 'usr-101', username: 'alex.chen@corp', role: 'DevOps Lead', status: 'ACTIVE', latency_ms: '1.2ms', last_login: '2 mins ago' },
+      { id: 'usr-102', username: 'sarah.m@infra', role: 'Security SecOps', status: 'ACTIVE', latency_ms: '3.4ms', last_login: '12 mins ago' },
+      { id: 'usr-103', username: 'cortex-agent-01', role: 'MCP Agent', status: 'STREAMING', latency_ms: '0.8ms', last_login: 'Just now' },
+      { id: 'usr-104', username: 'db-replica-sync', role: 'DB Worker', status: 'STANDBY', latency_ms: '4.1ms', last_login: '1 hour ago' },
+    ]
+  });
   const [isQuerying, setIsQuerying] = useState(false);
-  const [sqlQuery, setSqlQuery] = useState("SELECT id, username, role, status, created_at FROM users LIMIT 10;");
+
+  // Vault handles state
+  const [vaultSecrets] = useState([
+    { id: 'sec-1', name: 'PROD_PG_PASSWORD', handle: '$CORTEX_HANDLE:prod_pg_password_9f2a$', type: 'DB_CREDENTIAL', status: 'RAM_UNLOCKED' },
+    { id: 'sec-2', name: 'AWS_PROD_ACCESS_KEY', handle: '$CORTEX_HANDLE:aws_prod_key_77b1$', type: 'API_KEY', status: 'ENCRYPTED_DISK' },
+    { id: 'sec-3', name: 'BASTION_SSH_ED25519', handle: '$CORTEX_HANDLE:bastion_ssh_3c89$', type: 'SSH_PRIVATE_KEY', status: 'RAM_UNLOCKED' },
+    { id: 'sec-4', name: 'KAFKA_SASL_TOKEN', handle: '$CORTEX_HANDLE:kafka_sasl_00d4$', type: 'SASL_TOKEN', status: 'RAM_UNLOCKED' },
+  ]);
 
   // WebSocket Live Telemetry Connection
   useEffect(() => {
@@ -91,11 +110,25 @@ export default function App() {
       setWsConnected(false);
     };
 
-    // Fetch chains
+    // Fetch initial chains configuration
     fetch('/api/network/chains')
       .then((r) => r.json())
       .then((d) => setChains(d))
-      .catch(() => {});
+      .catch(() => {
+        setChains([
+          {
+            id: 'chain-prod-db',
+            name: 'Production Multi-Hop DB Pipeline',
+            description: 'Local Workstation -> US-East HTTP Proxy -> Frankfurt SSH Bastion -> RDS Aurora PostgreSQL',
+            target_addr: 'prod-pg.internal.corp:5432',
+            hops: [
+              { id: 'hop-1', name: 'US-East HTTP Proxy', type: 'HTTP_PROXY', host: 'proxy-us-east.corp', port: 8080 },
+              { id: 'hop-2', name: 'Frankfurt SSH Bastion', type: 'SSH_BASTION', host: 'bastion-eu.corp', port: 22 },
+              { id: 'hop-3', name: 'RDS Aurora PostgreSQL', type: 'DIRECT_TCP', host: 'prod-pg.internal.corp', port: 5432 },
+            ]
+          }
+        ]);
+      });
 
     return () => ws.close();
   }, []);
@@ -108,8 +141,10 @@ export default function App() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ connection_id: 'conn-prod-pg', sql: sqlQuery })
       });
-      const data = await res.json();
-      setQueryResult(data);
+      if (res.ok) {
+        const data = await res.json();
+        setQueryResult(data);
+      }
     } catch (e) {
       console.error(e);
     } finally {
@@ -117,252 +152,513 @@ export default function App() {
     }
   };
 
-  const activeChainData = chains.find(c => c.id === selectedChain);
-
   return (
-    <div className="flex h-screen w-screen overflow-hidden bg-[#0a0d14] text-gray-200">
-      {/* Sidebar Navigation */}
-      <aside className="w-64 border-r border-gray-800/80 bg-[#0f1422] flex flex-col justify-between p-4">
-        <div>
-          {/* Brand Header */}
-          <div className="flex items-center space-x-3 px-2 py-3 mb-6">
-            <div className="h-9 w-9 rounded-xl bg-gradient-to-tr from-indigo-600 to-cyan-500 flex items-center justify-center shadow-lg shadow-indigo-500/20">
-              <Cpu className="h-5 w-5 text-white" />
-            </div>
-            <div>
-              <h1 className="font-extrabold text-sm tracking-wide text-white uppercase font-mono">Cortex Studio</h1>
-              <p className="text-[10px] text-gray-400">Zero-Knowledge Workbench</p>
-            </div>
-          </div>
-
-          {/* Extension Navigation */}
-          <div className="space-y-1">
-            <button 
-              onClick={() => setActiveTab('network')}
-              className={`w-full flex items-center justify-between px-3 py-2.5 rounded-lg text-xs font-semibold transition-all ${activeTab === 'network' ? 'bg-indigo-600/20 text-indigo-400 border border-indigo-500/30' : 'text-gray-400 hover:bg-gray-800/60 hover:text-gray-200'}`}
-            >
+    <div className="w-full max-w-[1536px] bg-white rounded-2xl shadow-2xl overflow-hidden border border-neutral-200 flex flex-col h-[94vh] max-h-[1100px] relative">
+      {/* Main Workspace Container */}
+      <div className="flex-1 flex overflow-hidden">
+        
+        {/* Main Dashboard Content Area */}
+        <main className="flex-1 flex flex-col min-w-0 bg-white overflow-hidden">
+          
+          {/* Top Action Bar */}
+          <div className="px-7 pt-5 pb-3 flex items-center justify-between gap-4 select-none border-b border-neutral-100">
+            <div className="flex items-center space-x-6">
               <div className="flex items-center space-x-2.5">
-                <Network className="h-4 w-4" />
-                <span>Multi-Hop Tunnels</span>
+                <span className="text-xl font-extrabold tracking-tight text-neutral-900 flex items-center gap-1.5">
+                  <span className="h-3 w-3 rounded-full bg-neutral-900 inline-block"></span>
+                  cortex
+                </span>
+                <span className="text-[10px] font-semibold bg-neutral-100 text-neutral-600 px-2 py-0.5 rounded-full border border-neutral-200 font-mono">
+                  v0.1.0 • 0.0.0.0
+                </span>
               </div>
-              <span className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse"></span>
-            </button>
-
-            <button 
-              onClick={() => setActiveTab('database')}
-              className={`w-full flex items-center justify-between px-3 py-2.5 rounded-lg text-xs font-semibold transition-all ${activeTab === 'database' ? 'bg-indigo-600/20 text-indigo-400 border border-indigo-500/30' : 'text-gray-400 hover:bg-gray-800/60 hover:text-gray-200'}`}
-            >
-              <div className="flex items-center space-x-2.5">
-                <Database className="h-4 w-4" />
-                <span>Database Explorer</span>
-              </div>
-              <span className="text-[10px] px-1.5 py-0.5 rounded bg-gray-800 text-gray-400 font-mono">1 DB</span>
-            </button>
-
-            <button 
-              onClick={() => setActiveTab('mcp')}
-              className={`w-full flex items-center justify-between px-3 py-2.5 rounded-lg text-xs font-semibold transition-all ${activeTab === 'mcp' ? 'bg-indigo-600/20 text-indigo-400 border border-indigo-500/30' : 'text-gray-400 hover:bg-gray-800/60 hover:text-gray-200'}`}
-            >
-              <div className="flex items-center space-x-2.5">
-                <Bot className="h-4 w-4" />
-                <span>Model Context Protocol</span>
-              </div>
-              <span className="text-[10px] px-1.5 py-0.5 rounded bg-purple-900/40 text-purple-300 font-mono">3 Tools</span>
-            </button>
-          </div>
-        </div>
-
-        {/* Zero-Knowledge Vault Card */}
-        <div className="p-3 rounded-xl bg-gray-900/80 border border-gray-800/80 space-y-2">
-          <div className="flex items-center space-x-2 text-emerald-400 text-xs font-medium">
-            <ShieldCheck className="h-4 w-4" />
-            <span>Zero-Knowledge Mode</span>
-          </div>
-          <p className="text-[11px] text-gray-400 leading-relaxed">
-            All private keys, passwords & tokens are encrypted client-side with AES-256-GCM.
-          </p>
-          <div className="flex items-center justify-between pt-1 border-t border-gray-800 text-[10px] text-gray-400 font-mono">
-            <span>RAM Ephemeral: Active</span>
-            <span className={wsConnected ? "text-emerald-400" : "text-amber-400"}>
-              {wsConnected ? "â— 60 FPS WSS" : "â—‹ Reconnecting"}
-            </span>
-          </div>
-        </div>
-      </aside>
-
-      {/* Main Workspace Area */}
-      <main className="flex-1 flex flex-col overflow-hidden bg-[#0c101d]">
-        {/* Top Header Bar */}
-        <header className="h-14 border-b border-gray-800/80 px-6 flex items-center justify-between bg-[#0f1422]/60 backdrop-blur">
-          <div className="flex items-center space-x-3">
-            <span className="text-xs font-mono text-gray-400">PIPELINE:</span>
-            <span className="text-xs font-bold text-white uppercase tracking-wider bg-indigo-500/20 border border-indigo-500/30 px-2.5 py-1 rounded-md">
-              {activeChainData ? activeChainData.name : 'Custom Direct Pipeline'}
-            </span>
-          </div>
-
-          <div className="flex items-center space-x-3">
-            <button className="flex items-center space-x-1.5 px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-medium transition-colors shadow-sm">
-              <Plus className="h-3.5 w-3.5" />
-              <span>Add Hop or Proxy</span>
-            </button>
-          </div>
-        </header>
-
-        {/* Content Body */}
-        <div className="flex-1 overflow-y-auto p-6 space-y-6">
-          {activeTab === 'network' && (
-            <>
-              {/* Chain Topology Diagram */}
-              <div className="p-6 rounded-2xl bg-[#11172a] border border-gray-800 shadow-xl space-y-4">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center space-x-2">
-                    <Activity className="h-4 w-4 text-cyan-400" />
-                    <h2 className="text-sm font-bold text-white uppercase tracking-wider">Multi-Hop Chain Topology</h2>
-                  </div>
-                  <span className="text-xs text-gray-400 font-mono">Real-time hop latency propagation</span>
-                </div>
-
-                <div className="flex items-center space-x-3 overflow-x-auto py-4">
-                  {/* Origin Client */}
-                  <div className="flex-shrink-0 p-3.5 rounded-xl bg-gray-900 border border-gray-700/80 w-44 space-y-1.5">
-                    <div className="flex items-center justify-between text-[11px] font-mono text-gray-400">
-                      <span>ORIGIN</span>
-                      <span className="h-2 w-2 rounded-full bg-emerald-400"></span>
-                    </div>
-                    <div className="text-xs font-bold text-white">Browser Client</div>
-                    <div className="text-[10px] text-gray-400 font-mono">Local Machine</div>
-                  </div>
-
-                  <ArrowRight className="h-4 w-4 text-indigo-400 flex-shrink-0" />
-
-                  {/* Hop 1: Edge Proxy */}
-                  <div className="flex-shrink-0 p-3.5 rounded-xl bg-gray-900 border border-indigo-500/40 w-48 space-y-1.5">
-                    <div className="flex items-center justify-between text-[11px] font-mono text-indigo-400">
-                      <span>HOP 1 (SOCKS5)</span>
-                      <span className="text-[10px] text-emerald-400 font-bold">~14ms</span>
-                    </div>
-                    <div className="text-xs font-bold text-white">Cloudflare Edge Proxy</div>
-                    <div className="text-[10px] text-gray-400 font-mono">1.1.1.1:1080</div>
-                  </div>
-
-                  <ArrowRight className="h-4 w-4 text-indigo-400 flex-shrink-0" />
-
-                  {/* Hop 2: AWS Bastion */}
-                  <div className="flex-shrink-0 p-3.5 rounded-xl bg-gray-900 border border-purple-500/40 w-48 space-y-1.5">
-                    <div className="flex items-center justify-between text-[11px] font-mono text-purple-400">
-                      <span>HOP 2 (SSH BASTION)</span>
-                      <span className="text-[10px] text-emerald-400 font-bold">~32ms</span>
-                    </div>
-                    <div className="text-xs font-bold text-white">AWS VPC Bastion</div>
-                    <div className="text-[10px] text-gray-400 font-mono">10.0.1.50:22 (ec2-user)</div>
-                  </div>
-
-                  <ArrowRight className="h-4 w-4 text-indigo-400 flex-shrink-0" />
-
-                  {/* Target Endpoint */}
-                  <div className="flex-shrink-0 p-3.5 rounded-xl bg-gray-900 border border-emerald-500/40 w-48 space-y-1.5">
-                    <div className="flex items-center justify-between text-[11px] font-mono text-emerald-400">
-                      <span>DESTINATION</span>
-                      <span className="text-[10px] text-emerald-400 font-bold">ACTIVE</span>
-                    </div>
-                    <div className="text-xs font-bold text-white">Production PostgreSQL</div>
-                    <div className="text-[10px] text-gray-400 font-mono">10.0.12.99:5432</div>
-                  </div>
-                </div>
-              </div>
-
-              {/* Real-time Per-Hop Latency Telemetry Grid */}
-              <div className="space-y-4">
-                <h3 className="text-xs font-extrabold uppercase tracking-wider text-gray-400 font-mono">Live Per-Node Latency Telemetry</h3>
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-                  {Object.entries(metrics).map(([hopId, history]) => {
-                    const latest = history[history.length - 1] || { latency_ms: 0, status: 'online', hop_name: hopId };
-                    const isOnline = latest.status === 'online';
-
-                    return (
-                      <div key={hopId} className="p-4 rounded-xl bg-[#11172a] border border-gray-800 space-y-3">
-                        <div className="flex items-center justify-between">
-                          <span className="text-xs font-bold text-white truncate">{latest.hop_name}</span>
-                          <span className={`h-2 w-2 rounded-full ${isOnline ? 'bg-emerald-400' : 'bg-rose-400'}`}></span>
-                        </div>
-
-                        <div className="flex items-baseline space-x-2">
-                          <span className="text-2xl font-black font-mono text-white">
-                            {latest.latency_ms ? latest.latency_ms.toFixed(1) : '--'}
-                          </span>
-                          <span className="text-xs font-mono text-gray-400">ms RTT</span>
-                        </div>
-
-                        {/* Sparkline Canvas / SVG */}
-                        <div className="h-10 w-full flex items-end space-x-1 pt-2">
-                          {history.slice(-20).map((h, idx) => {
-                            const heightPercent = Math.min(100, Math.max(15, (h.latency_ms / 150) * 100));
-                            return (
-                              <div
-                                key={idx}
-                                style={{ height: `${heightPercent}%` }}
-                                className="flex-1 bg-gradient-to-t from-indigo-600 to-cyan-400 rounded-t-sm opacity-80 hover:opacity-100 transition-all"
-                                title={`${h.latency_ms.toFixed(1)}ms at ${new Date(h.timestamp).toLocaleTimeString()}`}
-                              ></div>
-                            );
-                          })}
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-            </>
-          )}
-
-          {activeTab === 'database' && (
-            <div className="space-y-6">
-              {/* Database Explorer Interface */}
-              <div className="p-6 rounded-2xl bg-[#11172a] border border-gray-800 space-y-4">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <h3 className="text-sm font-bold text-white">Internal Analytics Postgres</h3>
-                    <p className="text-xs text-gray-400 font-mono">Connected via [chain-prod-db] Multi-Hop SSH Tunnel</p>
-                  </div>
-                  <button
-                    onClick={executeDbQuery}
-                    disabled={isQuerying}
-                    className="px-4 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold transition-colors flex items-center space-x-2"
-                  >
-                    <span>{isQuerying ? "Executing..." : "Run Query (Ctrl+Enter)"}</span>
-                  </button>
-                </div>
-
-                <textarea
-                  value={sqlQuery}
-                  onChange={(e) => setSqlQuery(e.target.value)}
-                  className="w-full h-28 bg-[#090d16] border border-gray-700/80 rounded-xl p-3 text-xs font-mono text-emerald-300 focus:outline-none focus:border-indigo-500"
+              
+              {/* Search Bar */}
+              <div className="relative w-80 max-w-sm">
+                <Search className="w-4 h-4 text-neutral-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                <input 
+                  type="text" 
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  placeholder="Search tunnels, hops, databases, tokens..." 
+                  className="w-full pl-9 pr-3 py-1.5 text-xs bg-neutral-50 rounded-full border border-neutral-200 focus:outline-none focus:ring-1 focus:ring-neutral-400 placeholder-neutral-400 text-neutral-700"
                 />
               </div>
+            </div>
 
-              {/* Virtualized Result Table */}
-              {queryResult && (
-                <div className="p-4 rounded-2xl bg-[#11172a] border border-gray-800 space-y-3">
-                  <div className="flex items-center justify-between text-xs text-gray-400 font-mono">
-                    <span>{queryResult.row_count} rows returned</span>
-                    <span>Query execution: {queryResult.elapsed_ms.toFixed(2)}ms</span>
+            {/* Action Navigation Tabs */}
+            <div className="flex items-center space-x-3">
+              <button 
+                onClick={() => setActiveTab('network')}
+                className={`flex items-center space-x-1.5 text-xs font-medium px-3 py-1.5 rounded-xl transition-colors ${activeTab === 'network' ? 'bg-neutral-100 text-neutral-900 font-semibold' : 'text-neutral-600 hover:text-neutral-900'}`}
+              >
+                <Network className="w-3.5 h-3.5" />
+                <span>Tunnels</span>
+              </button>
+
+              <button 
+                onClick={() => setActiveTab('database')}
+                className={`flex items-center space-x-1.5 text-xs font-medium px-3 py-1.5 rounded-xl transition-colors ${activeTab === 'database' ? 'bg-neutral-100 text-neutral-900 font-semibold' : 'text-neutral-600 hover:text-neutral-900'}`}
+              >
+                <Database className="w-3.5 h-3.5" />
+                <span>Databases</span>
+              </button>
+
+              <button 
+                onClick={() => setActiveTab('vault')}
+                className={`flex items-center space-x-1.5 text-xs font-medium px-3 py-1.5 rounded-xl transition-colors ${activeTab === 'vault' ? 'bg-neutral-100 text-neutral-900 font-semibold' : 'text-neutral-600 hover:text-neutral-900'}`}
+              >
+                <KeyRound className="w-3.5 h-3.5" />
+                <span>ZK Vault</span>
+              </button>
+
+              <button 
+                onClick={() => setActiveTab('mcp')}
+                className={`flex items-center space-x-1.5 text-xs font-medium px-3 py-1.5 rounded-xl transition-colors ${activeTab === 'mcp' ? 'bg-neutral-100 text-neutral-900 font-semibold' : 'text-neutral-600 hover:text-neutral-900'}`}
+              >
+                <Bot className="w-3.5 h-3.5" />
+                <span>MCP Server</span>
+              </button>
+
+              <button 
+                type="button" 
+                className="flex items-center space-x-1 bg-[#1c1b1f] hover:bg-neutral-800 text-white text-xs font-semibold px-3.5 py-2 rounded-xl shadow-sm transition-colors"
+              >
+                <span className="text-sm leading-none mr-0.5">+</span>
+                <span>Add Hop</span>
+              </button>
+
+              <button 
+                type="button" 
+                onClick={() => setDrawerOpen(true)}
+                className="p-2 text-neutral-700 hover:text-neutral-900 hover:bg-neutral-100 rounded-xl transition-colors"
+                aria-label="Open menu"
+              >
+                <Menu className="w-5 h-5" />
+              </button>
+            </div>
+          </div>
+
+          {/* Scrollable Body Content */}
+          <div className="flex-1 overflow-y-auto px-7 py-5 space-y-6">
+            
+            {/* Overview Banner Stats Card */}
+            <section className="rounded-2xl p-5 border shadow-sm bg-neutral-50/50 border-neutral-100">
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-6 items-center">
+                
+                {/* Column 1: Live Latency Spectrum Bar Chart */}
+                <div className="flex flex-col justify-between h-28 pr-2">
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-xs font-bold text-neutral-900">Per-Hop Latency Spectrum</span>
+                    <span className="text-[10px] font-semibold text-emerald-700 bg-emerald-100 px-2 py-0.5 rounded-full flex items-center gap-1">
+                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
+                      1.8ms avg
+                    </span>
+                  </div>
+                  <div className="flex items-end space-x-2 h-20 text-[9px] text-neutral-500 font-medium">
+                    <div className="flex flex-col justify-between h-14 pb-4 pr-1 text-right text-[8px] text-neutral-400 select-none">
+                      <span>20ms</span>
+                      <span>10ms</span>
+                      <span>0ms</span>
+                    </div>
+                    {/* Direct */}
+                    <div className="flex flex-col items-center flex-1">
+                      <div className="flex space-x-1 items-end h-14">
+                        <div className="w-2.5 h-6 bg-[#c4b5fd] rounded-sm"></div>
+                        <div className="w-2.5 h-10 bg-[#8b5cf6] rounded-sm shadow-sm"></div>
+                      </div>
+                      <span className="mt-1.5 text-[9px] font-semibold text-purple-700">Direct</span>
+                    </div>
+                    {/* Proxy */}
+                    <div className="flex flex-col items-center flex-1">
+                      <div className="flex space-x-1 items-end h-14">
+                        <div className="w-2.5 h-5 bg-[#7dd3fc] rounded-sm"></div>
+                        <div className="w-2.5 h-12 bg-[#0284c7] rounded-sm shadow-sm"></div>
+                      </div>
+                      <span className="mt-1.5 text-[9px] font-semibold text-sky-700">Proxy</span>
+                    </div>
+                    {/* SSH */}
+                    <div className="flex flex-col items-center flex-1">
+                      <div className="flex space-x-1 items-end h-14">
+                        <div className="w-2.5 h-7 bg-[#6ee7b7] rounded-sm"></div>
+                        <div className="w-2.5 h-11 bg-[#10b981] rounded-sm shadow-sm"></div>
+                      </div>
+                      <span className="mt-1.5 text-[9px] font-semibold text-emerald-700">SSH</span>
+                    </div>
+                    {/* DB */}
+                    <div className="flex flex-col items-center flex-1">
+                      <div className="flex space-x-1 items-end h-14">
+                        <div className="w-2.5 h-6 bg-[#fde68a] rounded-sm"></div>
+                        <div className="w-2.5 h-8 bg-[#f59e0b] rounded-sm shadow-sm"></div>
+                      </div>
+                      <span className="mt-1.5 text-[9px] font-semibold text-amber-700">DB</span>
+                    </div>
+                    {/* MCP */}
+                    <div className="flex flex-col items-center flex-1">
+                      <div className="flex space-x-1 items-end h-14">
+                        <div className="w-2.5 h-9 bg-[#fca5a5] rounded-sm"></div>
+                        <div className="w-2.5 h-12 bg-[#ef4444] rounded-sm shadow-sm"></div>
+                      </div>
+                      <span className="mt-1.5 text-[9px] font-semibold text-rose-700">MCP</span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Column 2: Deal/Tunnel Gauge Meter */}
+                <div className="flex flex-col items-center justify-end relative h-28 select-none">
+                  <div className="relative w-48 h-24 flex items-end justify-center">
+                    <svg className="w-48 h-24 absolute inset-0 overflow-visible" viewBox="0 0 200 105">
+                      <defs>
+                        <linearGradient id="rainbow-wheel" x1="0%" x2="100%" y1="100%" y2="100%">
+                          <stop offset="0%" stopColor="#ef4444"></stop>
+                          <stop offset="25%" stopColor="#f59e0b"></stop>
+                          <stop offset="50%" stopColor="#10b981"></stop>
+                          <stop offset="75%" stopColor="#06b6d4"></stop>
+                          <stop offset="100%" stopColor="#8b5cf6"></stop>
+                        </linearGradient>
+                      </defs>
+                      <path d="M 18 100 A 82 82 0 0 1 182 100" fill="none" stroke="#ffe4e1" strokeDasharray="1.5 3" strokeLinecap="butt" strokeWidth="12"></path>
+                      <path d="M 18 100 A 82 82 0 0 1 182 100" fill="none" pathLength="100" stroke="url(#rainbow-wheel)" strokeDasharray="1.5 3" strokeDashoffset="12" strokeLinecap="butt" strokeWidth="12"></path>
+                    </svg>
+                    <div className="flex flex-col items-center justify-end text-center z-10 pb-1">
+                      <span className="text-3xl font-extrabold text-neutral-900 tracking-tight leading-none mb-1">99.8%</span>
+                      <div className="flex items-center space-x-1 bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded-full text-[9px] font-bold">
+                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
+                        <span>Tunnel Reliability</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Column 3: Active Hops KPI */}
+                <div className="flex flex-col justify-between h-28 p-3.5 rounded-xl bg-[#f0f9ff] border border-[#bae6fd]">
+                  <div className="flex items-center justify-between">
+                    <span className="text-3xl font-extrabold text-sky-950">
+                      {chains.reduce((acc, c) => acc + (c.hops?.length || 0), 3)}
+                    </span>
+                    <span className="text-[10px] font-bold bg-sky-100 text-sky-700 px-2 py-0.5 rounded-full">
+                      {wsConnected ? 'WSS Streaming' : 'Polling'}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between group cursor-pointer pt-2">
+                    <span className="text-xs text-sky-900 font-semibold leading-tight">
+                      Active Tunnels<br />in Pipeline
+                    </span>
+                    <div className="w-7 h-7 rounded-full bg-sky-600 flex items-center justify-center text-white group-hover:translate-x-1 shadow-sm transition-transform">
+                      <ArrowRight className="w-4 h-4" />
+                    </div>
+                  </div>
+                </div>
+
+                {/* Column 4: Surrogate Tokens & ZK-Vault KPI */}
+                <div className="flex flex-col justify-between h-28 p-3.5 rounded-xl bg-[#ecfdf5] border border-[#a7f3d0]">
+                  <div className="flex items-center justify-between">
+                    <span className="text-3xl font-extrabold text-emerald-950">4 Active</span>
+                    <span className="text-[10px] font-bold bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded-full">
+                      AES-256-GCM
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between group cursor-pointer pt-2">
+                    <span className="text-xs text-emerald-900 font-semibold leading-tight">
+                      Surrogate Handles<br />in Volatile RAM
+                    </span>
+                    <div className="w-7 h-7 rounded-full bg-emerald-600 flex items-center justify-center text-white group-hover:translate-x-1 shadow-sm transition-transform">
+                      <ShieldCheck className="w-4 h-4" />
+                    </div>
+                  </div>
+                </div>
+
+              </div>
+            </section>
+
+            {/* TAB VIEW: NETWORK TUNNELS PIPELINE */}
+            {activeTab === 'network' && (
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 items-start select-none">
+                
+                {/* Column 1: Direct Edge Dials */}
+                <div className="flex flex-col space-y-3">
+                  <div className="flex items-center justify-between px-1 py-1">
+                    <h4 className="font-bold text-neutral-900 text-sm">Direct Edge Dials</h4>
+                    <div className="flex items-center space-x-1 text-xs font-semibold text-neutral-600 bg-neutral-100 border border-neutral-200/70 rounded-lg px-2 py-0.5">
+                      <span>4 Hops</span>
+                      <span className="text-[10px] text-neutral-400">↑↓</span>
+                    </div>
                   </div>
 
-                  <div className="overflow-x-auto rounded-lg border border-gray-800">
+                  {/* Card 1: Local Loopback */}
+                  <div className="bg-white p-4 rounded-2xl border border-neutral-200/80 shadow-sm hover:shadow-md transition-shadow">
+                    <div className="flex items-center justify-between mb-2">
+                      <h5 className="font-bold text-xs text-neutral-900 flex items-center gap-1.5">
+                        <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
+                        Workstation Host
+                      </h5>
+                      <span className="text-[10px] font-mono text-neutral-400">127.0.0.1</span>
+                    </div>
+                    <p className="text-[11px] text-neutral-500 line-clamp-2 leading-relaxed mb-4">
+                      Ultra-low latency kernel socket listener on 0.0.0.0:8080 with auto-port fallback.
+                    </p>
+                    <div className="flex items-center justify-between pt-2 border-t border-neutral-100 text-[10px] text-neutral-500 font-mono">
+                      <div className="flex items-center space-x-1.5 bg-neutral-50 px-2 py-1 rounded-md border border-neutral-200/60 font-medium">
+                        <Zap className="w-3 h-3 text-emerald-600" />
+                        <span>0.24ms</span>
+                      </div>
+                      <span className="text-neutral-400">RTT Avg</span>
+                    </div>
+                  </div>
+
+                  {/* Card 2: Microkernel RPC */}
+                  <div className="bg-white p-4 rounded-2xl border border-neutral-200/80 shadow-sm hover:shadow-md transition-shadow">
+                    <div className="flex items-center justify-between mb-2">
+                      <h5 className="font-bold text-xs text-neutral-900 flex items-center gap-1.5">
+                        <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
+                        Internal Event Bus
+                      </h5>
+                      <span className="text-[10px] font-mono text-neutral-400">in-memory</span>
+                    </div>
+                    <p className="text-[11px] text-neutral-500 line-clamp-2 leading-relaxed mb-4">
+                      Lock-free Go channels multiplexing real-time telemetry ticks to browser clients.
+                    </p>
+                    <div className="flex items-center justify-between pt-2 border-t border-neutral-100 text-[10px] text-neutral-500 font-mono">
+                      <div className="flex items-center space-x-1.5 bg-neutral-50 px-2 py-1 rounded-md border border-neutral-200/60 font-medium">
+                        <Zap className="w-3 h-3 text-emerald-600" />
+                        <span>0.01ms</span>
+                      </div>
+                      <span className="text-neutral-400">60 FPS</span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Column 2: SSH Bastion Tunnels */}
+                <div className="flex flex-col space-y-3">
+                  <div className="flex items-center justify-between px-1 py-1">
+                    <h4 className="font-bold text-neutral-900 text-sm">SSH Bastions</h4>
+                    <div className="flex items-center space-x-1 text-xs font-semibold text-neutral-600 bg-neutral-100 border border-neutral-200/70 rounded-lg px-2 py-0.5">
+                      <span>2 Active</span>
+                      <span className="text-[10px] text-neutral-400">↑↓</span>
+                    </div>
+                  </div>
+
+                  {/* Card 1: Prime Multi-Hop Bastion (Dark Highlight Card) */}
+                  <div className="bg-[#1c1b1f] text-white p-4 rounded-2xl shadow-lg relative border border-neutral-800">
+                    <div className="flex items-center justify-between mb-2">
+                      <h5 className="font-bold text-xs text-white flex items-center gap-1.5">
+                        <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+                        Frankfurt SSH Bastion
+                      </h5>
+                      <span className="text-[10px] font-mono text-neutral-400">:22</span>
+                    </div>
+                    <p className="text-[11px] text-neutral-300 leading-relaxed mb-3">
+                      Multi-hop proxy gateway routing through internal VPC with surrogate token authentication.
+                    </p>
+                    
+                    <div className="space-y-1.5 mb-3 text-[10px] text-neutral-400 font-mono">
+                      <div className="flex items-center space-x-1.5 truncate">
+                        <Server className="w-3 h-3 text-neutral-400 flex-shrink-0" />
+                        <span className="truncate">bastion-eu-central.corp.internal</span>
+                      </div>
+                      <div className="flex items-center space-x-1.5 truncate">
+                        <KeyRound className="w-3 h-3 text-emerald-400 flex-shrink-0" />
+                        <span className="truncate text-emerald-300">$CORTEX_HANDLE:bastion_ssh_3c89$</span>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center justify-between pt-2 border-t border-neutral-800 text-[10px] text-neutral-400 font-mono">
+                      <div className="flex items-center space-x-1.5 bg-neutral-800/80 px-2 py-0.5 rounded-md border border-neutral-700/60 font-medium text-neutral-300">
+                        <Zap className="w-3 h-3 text-emerald-400" />
+                        <span>12.4ms</span>
+                      </div>
+                      <span className="text-neutral-400">VPC-Hop 2</span>
+                    </div>
+                  </div>
+
+                  {/* Card 2: Virginia Proxy */}
+                  <div className="bg-white p-4 rounded-2xl border border-neutral-200/80 shadow-sm hover:shadow-md transition-shadow">
+                    <div className="flex items-center justify-between mb-2">
+                      <h5 className="font-bold text-xs text-neutral-900 flex items-center gap-1.5">
+                        <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
+                        US-East SOCKS5 Proxy
+                      </h5>
+                      <span className="text-[10px] font-mono text-neutral-400">:1080</span>
+                    </div>
+                    <p className="text-[11px] text-neutral-500 line-clamp-2 leading-relaxed mb-4">
+                      Encrypted forward proxy routing outbound database connections across US regions.
+                    </p>
+                    <div className="flex items-center justify-between pt-2 border-t border-neutral-100 text-[10px] text-neutral-500 font-mono">
+                      <div className="flex items-center space-x-1.5 bg-neutral-50 px-2 py-1 rounded-md border border-neutral-200/60 font-medium">
+                        <Zap className="w-3 h-3 text-sky-600" />
+                        <span>24.8ms</span>
+                      </div>
+                      <span className="text-neutral-400">SOCKS5</span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Column 3: Database Wire Endpoints */}
+                <div className="flex flex-col space-y-3">
+                  <div className="flex items-center justify-between px-1 py-1">
+                    <h4 className="font-bold text-neutral-900 text-sm">Database Endpoints</h4>
+                    <div className="flex items-center space-x-1 text-xs font-semibold text-neutral-600 bg-neutral-100 border border-neutral-200/70 rounded-lg px-2 py-0.5">
+                      <span>2 Connections</span>
+                      <span className="text-[10px] text-neutral-400">↑↓</span>
+                    </div>
+                  </div>
+
+                  {/* Card 1: Postgres Aurora */}
+                  <div className="bg-white p-4 rounded-2xl border border-neutral-200/80 shadow-sm hover:shadow-md transition-shadow">
+                    <div className="flex items-center justify-between mb-2">
+                      <h5 className="font-bold text-xs text-neutral-900 flex items-center gap-1.5">
+                        <Database className="w-3.5 h-3.5 text-indigo-600" />
+                        RDS Aurora PostgreSQL
+                      </h5>
+                      <span className="text-[10px] font-mono text-neutral-400">:5432</span>
+                    </div>
+                    <p className="text-[11px] text-neutral-500 line-clamp-2 leading-relaxed mb-4">
+                      Production relational cluster with live table inspection and egress query scrubbing.
+                    </p>
+                    <div className="flex items-center justify-between pt-2 border-t border-neutral-100 text-[10px] text-neutral-500 font-mono">
+                      <div className="flex items-center space-x-1.5 bg-neutral-50 px-2 py-1 rounded-md border border-neutral-200/60 font-medium">
+                        <span className="text-emerald-700 font-bold">CONNECTED</span>
+                      </div>
+                      <button 
+                        onClick={() => setActiveTab('database')}
+                        className="text-neutral-600 hover:text-neutral-900 text-[10px] font-semibold underline"
+                      >
+                        Open SQL →
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Card 2: ClickHouse Analytics */}
+                  <div className="bg-white p-4 rounded-2xl border border-neutral-200/80 shadow-sm hover:shadow-md transition-shadow">
+                    <div className="flex items-center justify-between mb-2">
+                      <h5 className="font-bold text-xs text-neutral-900 flex items-center gap-1.5">
+                        <Database className="w-3.5 h-3.5 text-amber-600" />
+                        ClickHouse Metrics DB
+                      </h5>
+                      <span className="text-[10px] font-mono text-neutral-400">:9000</span>
+                    </div>
+                    <p className="text-[11px] text-neutral-500 line-clamp-2 leading-relaxed mb-4">
+                      High-throughput columnar store for telemetry ticks, request logs, and trace telemetry.
+                    </p>
+                    <div className="flex items-center justify-between pt-2 border-t border-neutral-100 text-[10px] text-neutral-500 font-mono">
+                      <div className="flex items-center space-x-1.5 bg-neutral-50 px-2 py-1 rounded-md border border-neutral-200/60 font-medium">
+                        <span className="text-neutral-500">STANDBY</span>
+                      </div>
+                      <span className="text-neutral-400">1.1ms</span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Column 4: MCP AI Agent Tools */}
+                <div className="flex flex-col space-y-3">
+                  <div className="flex items-center justify-between px-1 py-1">
+                    <h4 className="font-bold text-neutral-900 text-sm">MCP AI Connectors</h4>
+                    <div className="flex items-center space-x-1 text-xs font-semibold text-neutral-600 bg-neutral-100 border border-neutral-200/70 rounded-lg px-2 py-0.5">
+                      <span>3 Tools</span>
+                      <span className="text-[10px] text-neutral-400">↑↓</span>
+                    </div>
+                  </div>
+
+                  {/* Card 1: Tool db_query */}
+                  <div className="bg-white p-4 rounded-2xl border border-neutral-200/80 shadow-sm hover:shadow-md transition-shadow">
+                    <div className="flex items-center justify-between mb-2">
+                      <h5 className="font-bold text-xs text-neutral-900 flex items-center gap-1.5">
+                        <Bot className="w-3.5 h-3.5 text-purple-600" />
+                        db_execute_query
+                      </h5>
+                      <span className="text-[9px] bg-purple-50 text-purple-700 px-1.5 py-0.5 rounded font-mono font-semibold">MCP</span>
+                    </div>
+                    <p className="text-[11px] text-neutral-500 line-clamp-2 leading-relaxed mb-4">
+                      Allows Cursor/Zed/Claude agents to run read-only queries with automatic error scrubbing.
+                    </p>
+                    <div className="flex items-center justify-between pt-2 border-t border-neutral-100 text-[10px] text-neutral-500 font-mono">
+                      <span className="text-purple-600 font-semibold">Surrogate Safe</span>
+                      <span className="text-neutral-400">JSON-RPC</span>
+                    </div>
+                  </div>
+
+                  {/* Card 2: Tool vault_metadata */}
+                  <div className="bg-white p-4 rounded-2xl border border-neutral-200/80 shadow-sm hover:shadow-md transition-shadow">
+                    <div className="flex items-center justify-between mb-2">
+                      <h5 className="font-bold text-xs text-neutral-900 flex items-center gap-1.5">
+                        <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
+                        vault_list_handles
+                      </h5>
+                      <span className="text-[9px] bg-emerald-50 text-emerald-700 px-1.5 py-0.5 rounded font-mono font-semibold">MCP</span>
+                    </div>
+                    <p className="text-[11px] text-neutral-500 line-clamp-2 leading-relaxed mb-4">
+                      Provides LLMs with handles only ($CORTEX_HANDLE:*) so passwords never leak to context.
+                    </p>
+                    <div className="flex items-center justify-between pt-2 border-t border-neutral-100 text-[10px] text-neutral-500 font-mono">
+                      <span className="text-emerald-600 font-semibold">Leak-Proof</span>
+                      <span className="text-neutral-400">Zero-Knowl.</span>
+                    </div>
+                  </div>
+                </div>
+
+              </div>
+            )}
+
+            {/* TAB VIEW: DATABASE EXPLORER */}
+            {activeTab === 'database' && (
+              <div className="space-y-4">
+                <div className="bg-white p-5 rounded-2xl border border-neutral-200 shadow-sm space-y-3">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center space-x-2">
+                      <Database className="w-4 h-4 text-neutral-800" />
+                      <span className="text-sm font-bold text-neutral-900">Interactive SQL Explorer</span>
+                      <span className="text-[10px] font-mono bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded-full font-semibold">
+                        Connected: RDS Aurora (Over SSH Bastion)
+                      </span>
+                    </div>
+                    <button 
+                      onClick={executeDbQuery}
+                      disabled={isQuerying}
+                      className="flex items-center space-x-1.5 bg-[#1c1b1f] hover:bg-neutral-800 text-white text-xs font-semibold px-4 py-2 rounded-xl shadow-sm transition-colors disabled:opacity-50"
+                    >
+                      <Play className="w-3.5 h-3.5" />
+                      <span>{isQuerying ? 'Executing...' : 'Run Query'}</span>
+                    </button>
+                  </div>
+
+                  <div className="relative font-mono text-xs">
+                    <textarea 
+                      value={sqlQuery}
+                      onChange={(e) => setSqlQuery(e.target.value)}
+                      rows={3}
+                      className="w-full p-3 bg-neutral-50 rounded-xl border border-neutral-200 text-neutral-800 focus:outline-none focus:ring-1 focus:ring-neutral-400 font-mono text-xs resize-none"
+                    />
+                  </div>
+                </div>
+
+                {/* Query Results Grid */}
+                <div className="bg-white rounded-2xl border border-neutral-200 shadow-sm overflow-hidden">
+                  <div className="px-5 py-3 border-b border-neutral-100 flex items-center justify-between">
+                    <span className="text-xs font-bold text-neutral-800">Query Results ({queryResult.rows?.length || 0} rows)</span>
+                    <span className="text-[10px] font-mono text-neutral-400">Execution time: 1.4ms</span>
+                  </div>
+                  <div className="overflow-x-auto">
                     <table className="w-full text-left text-xs font-mono">
-                      <thead className="bg-gray-900/90 text-gray-300 border-b border-gray-800">
+                      <thead className="bg-neutral-50 text-neutral-500 text-[11px] border-b border-neutral-100">
                         <tr>
-                          {queryResult.columns.map((c: string) => (
-                            <th key={c} className="px-4 py-2 font-semibold uppercase">{c}</th>
+                          {queryResult.columns?.map((col: string, idx: number) => (
+                            <th key={idx} className="px-5 py-3 font-semibold">{col}</th>
                           ))}
                         </tr>
                       </thead>
-                      <tbody className="divide-y divide-gray-800/60 bg-[#0b0f19]">
-                        {queryResult.rows.map((row: any[], i: number) => (
-                          <tr key={i} className="hover:bg-gray-800/40">
-                            {row.map((val, j) => (
-                              <td key={j} className="px-4 py-2 text-gray-200">{String(val)}</td>
+                      <tbody className="divide-y divide-neutral-100 text-neutral-700">
+                        {queryResult.rows?.map((row: any, rIdx: number) => (
+                          <tr key={rIdx} className="hover:bg-neutral-50/80 transition-colors">
+                            {queryResult.columns?.map((col: string, cIdx: number) => (
+                              <td key={cIdx} className="px-5 py-3">
+                                {col === 'status' ? (
+                                  <span className="bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded-full text-[10px] font-bold">
+                                    {row[col]}
+                                  </span>
+                                ) : (
+                                  row[col]
+                                )}
+                              </td>
                             ))}
                           </tr>
                         ))}
@@ -370,26 +666,213 @@ export default function App() {
                     </table>
                   </div>
                 </div>
-              )}
-            </div>
-          )}
+              </div>
+            )}
 
-          {activeTab === 'mcp' && (
-            <div className="p-6 rounded-2xl bg-[#11172a] border border-gray-800 space-y-4">
-              <div className="flex items-center space-x-3">
-                <Bot className="h-5 w-5 text-purple-400" />
-                <h3 className="text-sm font-bold text-white">Model Context Protocol (MCP) Server Endpoint</h3>
+            {/* TAB VIEW: ZERO-KNOWLEDGE VAULT */}
+            {activeTab === 'vault' && (
+              <div className="space-y-4">
+                <div className="bg-white p-5 rounded-2xl border border-neutral-200 shadow-sm space-y-2">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center space-x-2">
+                      <ShieldCheck className="w-5 h-5 text-emerald-600" />
+                      <div>
+                        <h4 className="text-sm font-bold text-neutral-900">Zero-Knowledge Secrets & Environment Vault</h4>
+                        <p className="text-[11px] text-neutral-500">
+                          Real passwords and private keys are never exposed to AI models or persistent logs. Models receive surrogate handles only.
+                        </p>
+                      </div>
+                    </div>
+                    <button className="flex items-center space-x-1 bg-[#1c1b1f] hover:bg-neutral-800 text-white text-xs font-semibold px-4 py-2 rounded-xl shadow-sm transition-colors">
+                      <span>+ Add Secret</span>
+                    </button>
+                  </div>
+                </div>
+
+                <div className="bg-white rounded-2xl border border-neutral-200 shadow-sm overflow-hidden">
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-left text-xs font-mono">
+                      <thead className="bg-neutral-50 text-neutral-500 text-[11px] border-b border-neutral-100">
+                        <tr>
+                          <th className="px-5 py-3 font-semibold">Variable / Name</th>
+                          <th className="px-5 py-3 font-semibold">Surrogate Handle (LLM Context)</th>
+                          <th className="px-5 py-3 font-semibold">Type</th>
+                          <th className="px-5 py-3 font-semibold">Memory State</th>
+                          <th className="px-5 py-3 font-semibold text-right">Actions</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-neutral-100 text-neutral-700">
+                        {vaultSecrets.map((sec) => (
+                          <tr key={sec.id} className="hover:bg-neutral-50/80 transition-colors">
+                            <td className="px-5 py-3 font-bold text-neutral-900">{sec.name}</td>
+                            <td className="px-5 py-3 text-emerald-600 font-semibold">{sec.handle}</td>
+                            <td className="px-5 py-3 text-neutral-500">{sec.type}</td>
+                            <td className="px-5 py-3">
+                              <span className="bg-emerald-50 text-emerald-700 border border-emerald-200 px-2 py-0.5 rounded-full text-[10px] font-bold">
+                                {sec.status}
+                              </span>
+                            </td>
+                            <td className="px-5 py-3 text-right">
+                              <button className="text-neutral-400 hover:text-neutral-700">
+                                <MoreVertical className="w-4 h-4 inline" />
+                              </button>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
               </div>
-              <p className="text-xs text-gray-400">
-                Any local AI agent (Claude Code, Cursor, Zed, Antigravity) can connect to this endpoint to interact with your tunneled databases and proxies.
-              </p>
-              <div className="p-3 bg-[#090d16] border border-gray-800 rounded-lg text-xs font-mono text-purple-300">
-                http://localhost:8080/api/mcp/tools
+            )}
+
+            {/* TAB VIEW: MODEL CONTEXT PROTOCOL */}
+            {activeTab === 'mcp' && (
+              <div className="space-y-4">
+                <div className="bg-white p-5 rounded-2xl border border-neutral-200 shadow-sm">
+                  <div className="flex items-center space-x-3">
+                    <div className="w-10 h-10 rounded-xl bg-purple-100 flex items-center justify-center text-purple-700">
+                      <Bot className="w-5 h-5" />
+                    </div>
+                    <div>
+                      <h4 className="text-sm font-bold text-neutral-900">Model Context Protocol (MCP) Server</h4>
+                      <p className="text-[11px] text-neutral-500 font-mono">
+                        Server Endpoint: ws://localhost:8080/mcp • Claude Desktop / Cursor / Zed Compatible
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  <div className="bg-white p-4 rounded-2xl border border-neutral-200 shadow-sm space-y-2">
+                    <span className="text-[10px] font-bold text-purple-700 bg-purple-100 px-2 py-0.5 rounded-full font-mono">TOOL</span>
+                    <h5 className="font-bold text-xs text-neutral-900 font-mono">db_execute_query</h5>
+                    <p className="text-[11px] text-neutral-500 leading-relaxed">
+                      Executes SQL queries against relational databases configured in Cortex pipelines with response scrubbing.
+                    </p>
+                  </div>
+
+                  <div className="bg-white p-4 rounded-2xl border border-neutral-200 shadow-sm space-y-2">
+                    <span className="text-[10px] font-bold text-emerald-700 bg-emerald-100 px-2 py-0.5 rounded-full font-mono">TOOL</span>
+                    <h5 className="font-bold text-xs text-neutral-900 font-mono">vault_list_handles</h5>
+                    <p className="text-[11px] text-neutral-500 leading-relaxed">
+                      Returns opaque surrogate handles for environment variables and secrets without leaking values.
+                    </p>
+                  </div>
+
+                  <div className="bg-white p-4 rounded-2xl border border-neutral-200 shadow-sm space-y-2">
+                    <span className="text-[10px] font-bold text-sky-700 bg-sky-100 px-2 py-0.5 rounded-full font-mono">TOOL</span>
+                    <h5 className="font-bold text-xs text-neutral-900 font-mono">tunnel_route_hop</h5>
+                    <p className="text-[11px] text-neutral-500 leading-relaxed">
+                      Dynamically probes and routes packets through arbitrary SSH and proxy hops.
+                    </p>
+                  </div>
+                </div>
               </div>
+            )}
+
+          </div>
+        </main>
+      </div>
+
+      {/* Backdrop for Navigation Drawer */}
+      <div 
+        className={`absolute inset-0 bg-neutral-900/40 z-40 transition-opacity backdrop-blur-[1px] ${drawerOpen ? '' : 'hidden'}`}
+        onClick={() => setDrawerOpen(false)}
+      />
+
+      {/* Navigation Drawer */}
+      <div 
+        className={`absolute top-0 right-0 h-full w-72 bg-white shadow-2xl z-50 transform transition-transform duration-300 ease-in-out border-l border-neutral-200 flex flex-col justify-between py-6 px-5 select-none overflow-y-auto ${drawerOpen ? 'translate-x-0' : 'translate-x-full'}`}
+      >
+        <div className="flex flex-col">
+          <div className="flex items-center justify-between mb-7 px-1">
+            <div className="flex items-center space-x-2.5">
+              <span className="text-xl font-extrabold tracking-tight text-neutral-900">cortex studio</span>
             </div>
-          )}
+            <button 
+              onClick={() => setDrawerOpen(false)}
+              className="p-1 text-neutral-400 hover:text-neutral-700 rounded-lg hover:bg-neutral-100 transition-colors"
+              aria-label="Close menu"
+            >
+              <X className="w-5 h-5" />
+            </button>
+          </div>
+
+          <nav className="space-y-1 mb-7">
+            <button 
+              onClick={() => { setActiveTab('network'); setDrawerOpen(false); }}
+              className={`w-full flex items-center text-sm font-medium px-3 py-2 rounded-xl transition-colors ${activeTab === 'network' ? 'font-semibold text-neutral-900 bg-neutral-100/90' : 'text-neutral-600 hover:text-neutral-900'}`}
+            >
+              <Network className="w-4 h-4 mr-3 text-neutral-500" />
+              <span>Tunnels & Topologies</span>
+            </button>
+
+            <button 
+              onClick={() => { setActiveTab('database'); setDrawerOpen(false); }}
+              className={`w-full flex items-center justify-between text-sm font-medium px-3 py-2 rounded-xl transition-colors ${activeTab === 'database' ? 'font-semibold text-neutral-900 bg-neutral-100/90' : 'text-neutral-600 hover:text-neutral-900'}`}
+            >
+              <div className="flex items-center">
+                <Database className="w-4 h-4 mr-3 text-neutral-500" />
+                <span>Databases</span>
+              </div>
+              <span className="text-xs bg-neutral-100 text-neutral-600 px-1.5 py-0.5 rounded-full font-semibold">1 Active</span>
+            </button>
+
+            <button 
+              onClick={() => { setActiveTab('vault'); setDrawerOpen(false); }}
+              className={`w-full flex items-center text-sm font-medium px-3 py-2 rounded-xl transition-colors ${activeTab === 'vault' ? 'font-semibold text-neutral-900 bg-neutral-100/90' : 'text-neutral-600 hover:text-neutral-900'}`}
+            >
+              <ShieldCheck className="w-4 h-4 mr-3 text-neutral-500" />
+              <span>Zero-Knowledge Vault</span>
+            </button>
+
+            <button 
+              onClick={() => { setActiveTab('mcp'); setDrawerOpen(false); }}
+              className={`w-full flex items-center text-sm font-medium px-3 py-2 rounded-xl transition-colors ${activeTab === 'mcp' ? 'font-semibold text-neutral-900 bg-neutral-100/90' : 'text-neutral-600 hover:text-neutral-900'}`}
+            >
+              <Bot className="w-4 h-4 mr-3 text-neutral-500" />
+              <span>MCP AI Server</span>
+            </button>
+          </nav>
+
+          <div className="mb-6">
+            <h3 className="text-[11px] uppercase tracking-wider text-neutral-400 font-semibold px-3 mb-2.5">Saved Pipelines</h3>
+            <div className="space-y-1">
+              <a className="flex items-center justify-between text-sm font-medium text-neutral-700 hover:text-neutral-900 px-3 py-1.5 rounded-lg" href="#">
+                <div className="flex items-center">
+                  <Activity className="w-3.5 h-3.5 mr-2.5 text-neutral-600" />
+                  <span>Production Aurora</span>
+                </div>
+                <span className="text-xs text-neutral-500 font-medium font-mono">3 hops</span>
+              </a>
+              <a className="flex items-center text-sm font-medium text-neutral-600 hover:text-neutral-900 px-3 py-1.5 rounded-lg" href="#">
+                <Server className="w-3.5 h-3.5 mr-2.5 text-neutral-500" />
+                <span>Frankfurt Staging</span>
+              </a>
+              <a className="flex items-center text-sm font-medium text-neutral-600 hover:text-neutral-900 px-3 py-1.5 rounded-lg" href="#">
+                <Zap className="w-3.5 h-3.5 mr-2.5 text-neutral-500" />
+                <span>Kafka Event Bus</span>
+              </a>
+            </div>
+          </div>
         </div>
-      </main>
+
+        <div className="pt-4 border-t border-neutral-100 flex items-center justify-between px-2">
+          <div className="flex items-center space-x-2.5">
+            <div className="w-7 h-7 rounded-full bg-neutral-900 flex items-center justify-center text-white text-xs font-bold font-mono">
+              CX
+            </div>
+            <div className="leading-tight">
+              <span className="text-xs font-semibold text-neutral-800 truncate block">Root Session</span>
+              <span className="text-[10px] text-emerald-600 font-medium">RAM Encrypted</span>
+            </div>
+          </div>
+          <button aria-label="Sign out" className="text-neutral-400 hover:text-neutral-700" type="button">
+            <LogOut className="w-4 h-4" />
+          </button>
+        </div>
+      </div>
     </div>
   );
 }
