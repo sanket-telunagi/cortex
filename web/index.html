@@ -1,11 +1,11 @@
 <!doctype html>
-<html lang="en" class="h-full">
+<html lang="en" class="h-full w-full">
   <head>
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%231c1b1f'><circle cx='12' cy='12' r='10'/></svg>" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="description" content="Cortex Studio - The Zero-Knowledge Infrastructure Workbench for Multi-Hop Tunnels, Relational Database Exploration, and Model Context Protocol (MCP) AI Agents." />
-    <meta name="theme-color" content="#18181b" />
+    <meta name="theme-color" content="#ffffff" />
     <title>Cortex Studio | Zero-Knowledge Infrastructure Workbench</title>
     <!-- Google Fonts: Plus Jakarta Sans & JetBrains Mono -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -36,25 +36,22 @@
     <style>
       html, body {
         height: 100%;
+        width: 100%;
         margin: 0;
         padding: 0;
         font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
         -webkit-font-smoothing: antialiased;
         -moz-osx-font-smoothing: grayscale;
-        background-color: #18181b;
+        background-color: #ffffff;
+        overflow: hidden;
       }
       #root {
-        min-height: 100%;
+        height: 100%;
         width: 100%;
+        margin: 0;
+        padding: 0;
         display: flex;
-        justify-content: center;
-        align-items: center;
-      }
-      @media (max-width: 768px) {
-        #root {
-          padding: 0;
-          align-items: stretch;
-        }
+        flex-direction: column;
       }
       .font-mono {
         font-family: 'JetBrains Mono', monospace;
@@ -76,7 +73,7 @@
       }
     </style>
   </head>
-  <body class="h-full bg-zinc-900 text-neutral-900 selection:bg-neutral-800 selection:text-white p-0 md:p-3 lg:p-4 box-border">
+  <body class="h-full w-full bg-white text-neutral-900 selection:bg-neutral-800 selection:text-white antialiased overflow-hidden">
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>
