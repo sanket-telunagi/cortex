@@ -12,6 +12,7 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/cortex-studio/cortex/internal/auth"
 	"github.com/cortex-studio/cortex/internal/kernel"
 	"github.com/cortex-studio/cortex/internal/tunnel"
 	db "github.com/cortex-studio/cortex/plugins/ext_db"
@@ -94,12 +95,17 @@ func main() {
 		log.Fatalf("failed registering ext_mcp: %v", err)
 	}
 
+	authService := auth.NewAuthService()
+
 	mux := http.NewServeMux()
 
 	mux.HandleFunc("/api/health", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		fmt.Fprintf(w, `{"status":"online","port":%d,"timestamp":"%s"}`, actualPort, time.Now().Format(time.RFC3339))
 	})
+
+	// Mount RBAC & Authentication API endpoints
+	auth.RegisterAuthRoutes(mux, authService)
 
 	registry.RegisterAllRoutes(mux)
 
@@ -124,8 +130,14 @@ func main() {
 		})
 	}
 
-	fmt.Printf("Dashboard accessible at:\n  - Local:   http://localhost:%d\n  - Network: http://<SERVER_IP>:%d\n\n", actualPort, actualPort)
-	if err := http.Serve(listener, mux); err != nil {
-		log.Fatalf("server error: %v", err)
+	server := &http.Server{
+		Handler:      mux,
+		ReadTimeout:  15 * time.Second,
+		WriteTimeout: 15 * time.Second,
+	}
+
+	log.Printf("Cortex Workbench ready at http://localhost:%d\n", actualPort)
+	if err := server.Serve(listener); err != nil && err != http.ErrServerClosed {
+		log.Fatalf("Server exited unexpectedly: %v", err)
 	}
 }

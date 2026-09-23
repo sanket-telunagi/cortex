@@ -14,7 +14,14 @@ import {
   Server, 
   Zap, 
   KeyRound, 
-  LogOut 
+  LogOut,
+  User,
+  Users,
+  Lock,
+  Mail,
+  UserCheck,
+  CheckCircle2,
+  AlertCircle
 } from 'lucide-react';
 
 interface HopMetric {
@@ -42,8 +49,15 @@ interface ChainConfig {
   target_addr: string;
 }
 
+interface AuthUser {
+  id: string;
+  email: string;
+  full_name: string;
+  role: 'ADMIN' | 'ENGINEER' | 'VIEWER' | 'MCP_AGENT';
+}
+
 export default function App() {
-  const [activeTab, setActiveTab] = useState<'network' | 'database' | 'vault' | 'mcp'>('network');
+  const [activeTab, setActiveTab] = useState<'network' | 'database' | 'vault' | 'mcp' | 'rbac'>('network');
   const [, setMetrics] = useState<Record<string, HopMetric[]>>({});
   const [, setCurrentMetrics] = useState<HopMetric[]>([]);
   const [chains, setChains] = useState<ChainConfig[]>([]);
@@ -51,6 +65,26 @@ export default function App() {
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   
+  // Authentication & RBAC State
+  const [currentUser, setCurrentUser] = useState<AuthUser | null>(null);
+  const [authToken, setAuthToken] = useState<string | null>(localStorage.getItem('cortex_token'));
+  const [authModalOpen, setAuthModalOpen] = useState(false);
+  const [authMode, setAuthMode] = useState<'login' | 'signup'>('login');
+  const [authEmail, setAuthEmail] = useState('');
+  const [authPassword, setAuthPassword] = useState('');
+  const [authFullName, setAuthFullName] = useState('');
+  const [authRole, setAuthRole] = useState<'ADMIN' | 'ENGINEER' | 'VIEWER' | 'MCP_AGENT'>('ENGINEER');
+  const [authError, setAuthError] = useState<string | null>(null);
+  const [authLoading, setAuthLoading] = useState(false);
+  
+  // Team Management State
+  const [teamMembers, setTeamMembers] = useState<AuthUser[]>([
+    { id: 'usr-admin-01', email: 'admin@cortex.internal', full_name: 'Admin User', role: 'ADMIN' },
+    { id: 'usr-eng-02', email: 'alex.chen@corp', full_name: 'Alex Chen', role: 'ENGINEER' },
+    { id: 'usr-sec-03', email: 'sarah.m@infra', full_name: 'Sarah Miller', role: 'VIEWER' },
+    { id: 'usr-mcp-04', email: 'agent-claude@mcp.bot', full_name: 'Claude MCP Agent', role: 'MCP_AGENT' },
+  ]);
+
   // Database Query State
   const [sqlQuery, setSqlQuery] = useState("SELECT id, username, role, status, latency_ms, last_login FROM connections LIMIT 10;");
   const [queryResult, setQueryResult] = useState<any>({
@@ -71,6 +105,47 @@ export default function App() {
     { id: 'sec-3', name: 'BASTION_SSH_ED25519', handle: '$CORTEX_HANDLE:bastion_ssh_3c89$', type: 'SSH_PRIVATE_KEY', status: 'RAM_UNLOCKED' },
     { id: 'sec-4', name: 'KAFKA_SASL_TOKEN', handle: '$CORTEX_HANDLE:kafka_sasl_00d4$', type: 'SASL_TOKEN', status: 'RAM_UNLOCKED' },
   ]);
+
+  // Validate session on start
+  useEffect(() => {
+    const token = localStorage.getItem('cortex_token');
+    if (token) {
+      fetch('/api/auth/me', {
+        headers: { 'Authorization': `Bearer ${token}` }
+      })
+      .then(res => {
+        if (res.ok) return res.json();
+        throw new Error('Invalid token');
+      })
+      .then(data => {
+        setCurrentUser({
+          id: data.user_id,
+          email: data.email,
+          full_name: data.full_name,
+          role: data.role
+        });
+      })
+      .catch(() => {
+        localStorage.removeItem('cortex_token');
+        setAuthToken(null);
+        // Default to admin for seamless local development
+        setCurrentUser({
+          id: 'usr-admin-01',
+          email: 'admin@cortex.internal',
+          full_name: 'Admin User',
+          role: 'ADMIN'
+        });
+      });
+    } else {
+      // Default initial session
+      setCurrentUser({
+        id: 'usr-admin-01',
+        email: 'admin@cortex.internal',
+        full_name: 'Admin User',
+        role: 'ADMIN'
+      });
+    }
+  }, []);
 
   // WebSocket Live Telemetry Connection
   useEffect(() => {
@@ -133,12 +208,81 @@ export default function App() {
     return () => ws.close();
   }, []);
 
+  const handleAuthSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setAuthError(null);
+    setAuthLoading(true);
+
+    const endpoint = authMode === 'login' ? '/api/auth/login' : '/api/auth/signup';
+    const payload = authMode === 'login' 
+      ? { email: authEmail, password: authPassword }
+      : { email: authEmail, password: authPassword, full_name: authFullName, role: authRole };
+
+    try {
+      const res = await fetch(endpoint, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || 'Authentication failed');
+      }
+
+      if (data.session && data.user) {
+        localStorage.setItem('cortex_token', data.session.token);
+        setAuthToken(data.session.token);
+        setCurrentUser({
+          id: data.user.id,
+          email: data.user.email,
+          full_name: data.user.full_name,
+          role: data.user.role
+        });
+        setAuthModalOpen(false);
+        setAuthEmail('');
+        setAuthPassword('');
+        setAuthFullName('');
+      }
+    } catch (err: any) {
+      setAuthError(err.message || 'An error occurred');
+    } finally {
+      setAuthLoading(false);
+    }
+  };
+
+  const handleLogout = () => {
+    if (authToken) {
+      fetch('/api/auth/logout', {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${authToken}` }
+      }).catch(() => {});
+    }
+    localStorage.removeItem('cortex_token');
+    setAuthToken(null);
+    setCurrentUser(null);
+    setAuthModalOpen(true);
+  };
+
+  const switchUserRole = (newRole: 'ADMIN' | 'ENGINEER' | 'VIEWER' | 'MCP_AGENT') => {
+    if (currentUser) {
+      setCurrentUser({ ...currentUser, role: newRole });
+    }
+  };
+
   const executeDbQuery = async () => {
+    if (currentUser?.role === 'VIEWER') {
+      alert('RBAC Notice: Viewers have read-only cached access. Admin/Engineer authorization required to execute ad-hoc SQL.');
+      return;
+    }
     setIsQuerying(true);
     try {
       const res = await fetch('/api/db/query', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 
+          'Content-Type': 'application/json',
+          ...(authToken ? { 'Authorization': `Bearer ${authToken}` } : {})
+        },
         body: JSON.stringify({ connection_id: 'conn-prod-pg', sql: sqlQuery })
       });
       if (res.ok) {
@@ -149,6 +293,21 @@ export default function App() {
       console.error(e);
     } finally {
       setIsQuerying(false);
+    }
+  };
+
+  const getRoleBadge = (role: string) => {
+    switch (role) {
+      case 'ADMIN':
+        return <span className="bg-purple-100 text-purple-700 border border-purple-200 px-2 py-0.5 rounded-full text-[10px] font-bold">ADMIN</span>;
+      case 'ENGINEER':
+        return <span className="bg-sky-100 text-sky-700 border border-sky-200 px-2 py-0.5 rounded-full text-[10px] font-bold">ENGINEER</span>;
+      case 'VIEWER':
+        return <span className="bg-amber-100 text-amber-700 border border-amber-200 px-2 py-0.5 rounded-full text-[10px] font-bold">VIEWER</span>;
+      case 'MCP_AGENT':
+        return <span className="bg-emerald-100 text-emerald-700 border border-emerald-200 px-2 py-0.5 rounded-full text-[10px] font-bold">MCP AGENT</span>;
+      default:
+        return <span className="bg-neutral-100 text-neutral-700 px-2 py-0.5 rounded-full text-[10px] font-bold">{role}</span>;
     }
   };
 
@@ -174,7 +333,7 @@ export default function App() {
               </div>
               
               {/* Search Bar */}
-              <div className="relative w-80 max-w-sm">
+              <div className="relative w-72 max-w-sm">
                 <Search className="w-4 h-4 text-neutral-400 absolute left-3 top-1/2 -translate-y-1/2" />
                 <input 
                   type="text" 
@@ -187,7 +346,7 @@ export default function App() {
             </div>
 
             {/* Action Navigation Tabs */}
-            <div className="flex items-center space-x-3">
+            <div className="flex items-center space-x-2">
               <button 
                 onClick={() => setActiveTab('network')}
                 className={`flex items-center space-x-1.5 text-xs font-medium px-3 py-1.5 rounded-xl transition-colors ${activeTab === 'network' ? 'bg-neutral-100 text-neutral-900 font-semibold' : 'text-neutral-600 hover:text-neutral-900'}`}
@@ -221,12 +380,38 @@ export default function App() {
               </button>
 
               <button 
-                type="button" 
-                className="flex items-center space-x-1 bg-[#1c1b1f] hover:bg-neutral-800 text-white text-xs font-semibold px-3.5 py-2 rounded-xl shadow-sm transition-colors"
+                onClick={() => setActiveTab('rbac')}
+                className={`flex items-center space-x-1.5 text-xs font-medium px-3 py-1.5 rounded-xl transition-colors ${activeTab === 'rbac' ? 'bg-neutral-100 text-neutral-900 font-semibold' : 'text-neutral-600 hover:text-neutral-900'}`}
               >
-                <span className="text-sm leading-none mr-0.5">+</span>
-                <span>Add Hop</span>
+                <Users className="w-3.5 h-3.5" />
+                <span>RBAC & Team</span>
               </button>
+
+              {/* User Account / Auth Trigger */}
+              {currentUser ? (
+                <div className="flex items-center space-x-2 pl-2 border-l border-neutral-200">
+                  <div className="flex items-center space-x-1.5 bg-neutral-50 px-2.5 py-1 rounded-xl border border-neutral-200/80">
+                    <User className="w-3.5 h-3.5 text-neutral-600" />
+                    <span className="text-xs font-semibold text-neutral-800">{currentUser.full_name}</span>
+                    {getRoleBadge(currentUser.role)}
+                  </div>
+                  <button 
+                    onClick={handleLogout}
+                    title="Sign Out"
+                    className="p-1.5 text-neutral-400 hover:text-rose-600 hover:bg-neutral-100 rounded-lg transition-colors"
+                  >
+                    <LogOut className="w-4 h-4" />
+                  </button>
+                </div>
+              ) : (
+                <button 
+                  onClick={() => setAuthModalOpen(true)}
+                  className="flex items-center space-x-1.5 bg-neutral-900 hover:bg-neutral-800 text-white text-xs font-semibold px-3.5 py-2 rounded-xl shadow-sm transition-colors"
+                >
+                  <Lock className="w-3.5 h-3.5" />
+                  <span>Sign In</span>
+                </button>
+              )}
 
               <button 
                 type="button" 
@@ -350,17 +535,19 @@ export default function App() {
                   </div>
                 </div>
 
-                {/* Column 4: Surrogate Tokens & ZK-Vault KPI */}
+                {/* Column 4: RBAC & Vault State */}
                 <div className="flex flex-col justify-between h-28 p-3.5 rounded-xl bg-[#ecfdf5] border border-[#a7f3d0]">
                   <div className="flex items-center justify-between">
-                    <span className="text-3xl font-extrabold text-emerald-950">4 Active</span>
+                    <span className="text-3xl font-extrabold text-emerald-950">
+                      {currentUser?.role || 'ADMIN'}
+                    </span>
                     <span className="text-[10px] font-bold bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded-full">
-                      AES-256-GCM
+                      RBAC Active
                     </span>
                   </div>
-                  <div className="flex items-center justify-between group cursor-pointer pt-2">
+                  <div className="flex items-center justify-between group cursor-pointer pt-2" onClick={() => setActiveTab('rbac')}>
                     <span className="text-xs text-emerald-900 font-semibold leading-tight">
-                      Surrogate Handles<br />in Volatile RAM
+                      Manage Roles<br />& Access Control
                     </span>
                     <div className="w-7 h-7 rounded-full bg-emerald-600 flex items-center justify-center text-white group-hover:translate-x-1 shadow-sm transition-transform">
                       <ShieldCheck className="w-4 h-4" />
@@ -381,7 +568,6 @@ export default function App() {
                     <h4 className="font-bold text-neutral-900 text-sm">Direct Edge Dials</h4>
                     <div className="flex items-center space-x-1 text-xs font-semibold text-neutral-600 bg-neutral-100 border border-neutral-200/70 rounded-lg px-2 py-0.5">
                       <span>4 Hops</span>
-                      <span className="text-[10px] text-neutral-400">↑↓</span>
                     </div>
                   </div>
 
@@ -434,11 +620,10 @@ export default function App() {
                     <h4 className="font-bold text-neutral-900 text-sm">SSH Bastions</h4>
                     <div className="flex items-center space-x-1 text-xs font-semibold text-neutral-600 bg-neutral-100 border border-neutral-200/70 rounded-lg px-2 py-0.5">
                       <span>2 Active</span>
-                      <span className="text-[10px] text-neutral-400">↑↓</span>
                     </div>
                   </div>
 
-                  {/* Card 1: Prime Multi-Hop Bastion (Dark Highlight Card) */}
+                  {/* Card 1: Prime Multi-Hop Bastion */}
                   <div className="bg-[#1c1b1f] text-white p-4 rounded-2xl shadow-lg relative border border-neutral-800">
                     <div className="flex items-center justify-between mb-2">
                       <h5 className="font-bold text-xs text-white flex items-center gap-1.5">
@@ -499,7 +684,6 @@ export default function App() {
                     <h4 className="font-bold text-neutral-900 text-sm">Database Endpoints</h4>
                     <div className="flex items-center space-x-1 text-xs font-semibold text-neutral-600 bg-neutral-100 border border-neutral-200/70 rounded-lg px-2 py-0.5">
                       <span>2 Connections</span>
-                      <span className="text-[10px] text-neutral-400">↑↓</span>
                     </div>
                   </div>
 
@@ -555,7 +739,6 @@ export default function App() {
                     <h4 className="font-bold text-neutral-900 text-sm">MCP AI Connectors</h4>
                     <div className="flex items-center space-x-1 text-xs font-semibold text-neutral-600 bg-neutral-100 border border-neutral-200/70 rounded-lg px-2 py-0.5">
                       <span>3 Tools</span>
-                      <span className="text-[10px] text-neutral-400">↑↓</span>
                     </div>
                   </div>
 
@@ -596,6 +779,99 @@ export default function App() {
                   </div>
                 </div>
 
+              </div>
+            )}
+
+            {/* TAB VIEW: RBAC & TEAM MANAGEMENT */}
+            {activeTab === 'rbac' && (
+              <div className="space-y-4">
+                <div className="bg-white p-5 rounded-2xl border border-neutral-200 shadow-sm flex items-center justify-between">
+                  <div className="flex items-center space-x-3">
+                    <div className="w-10 h-10 rounded-xl bg-purple-100 flex items-center justify-center text-purple-700">
+                      <Users className="w-5 h-5" />
+                    </div>
+                    <div>
+                      <h4 className="text-sm font-bold text-neutral-900">Role-Based Access Control (RBAC) & Team</h4>
+                      <p className="text-[11px] text-neutral-500">
+                        Granular permissions across Multi-Hop Tunnels, Database Queries, Ephemeral Keys, and MCP Agents.
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center space-x-2">
+                    <span className="text-xs text-neutral-500 font-medium">Active User Simulation:</span>
+                    <select 
+                      value={currentUser?.role || 'ADMIN'} 
+                      onChange={(e) => switchUserRole(e.target.value as any)}
+                      className="text-xs bg-neutral-50 border border-neutral-200 rounded-xl px-2.5 py-1.5 font-semibold text-neutral-800 focus:outline-none focus:ring-1 focus:ring-neutral-400"
+                    >
+                      <option value="ADMIN">Role: ADMIN (Full Control)</option>
+                      <option value="ENGINEER">Role: ENGINEER (Tunnels + DB Read/Write)</option>
+                      <option value="VIEWER">Role: VIEWER (Read-Only Telemetry)</option>
+                      <option value="MCP_AGENT">Role: MCP_AGENT (Scoped Surrogate)</option>
+                    </select>
+                  </div>
+                </div>
+
+                {/* Team Members List */}
+                <div className="bg-white rounded-2xl border border-neutral-200 shadow-sm overflow-hidden">
+                  <div className="px-5 py-3 border-b border-neutral-100 flex items-center justify-between">
+                    <span className="text-xs font-bold text-neutral-800">Team Identities & Access Roles</span>
+                    <button 
+                      onClick={() => { setAuthMode('signup'); setAuthModalOpen(true); }}
+                      className="text-xs bg-neutral-900 hover:bg-neutral-800 text-white px-3 py-1.5 rounded-xl font-semibold transition-colors"
+                    >
+                      + Add Team Member
+                    </button>
+                  </div>
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-left text-xs font-mono">
+                      <thead className="bg-neutral-50 text-neutral-500 text-[11px] border-b border-neutral-100">
+                        <tr>
+                          <th className="px-5 py-3 font-semibold">Member</th>
+                          <th className="px-5 py-3 font-semibold">Assigned Role</th>
+                          <th className="px-5 py-3 font-semibold">Tunnels & Bastions</th>
+                          <th className="px-5 py-3 font-semibold">Database Queries</th>
+                          <th className="px-5 py-3 font-semibold">Zero-Knowledge Vault</th>
+                          <th className="px-5 py-3 font-semibold text-right">Actions</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-neutral-100 text-neutral-700">
+                        {teamMembers.map((member) => (
+                          <tr key={member.id} className="hover:bg-neutral-50/80 transition-colors">
+                            <td className="px-5 py-3 font-sans">
+                              <div className="font-bold text-neutral-900">{member.full_name}</div>
+                              <div className="text-[11px] text-neutral-400 font-mono">{member.email}</div>
+                            </td>
+                            <td className="px-5 py-3">
+                              {getRoleBadge(member.role)}
+                            </td>
+                            <td className="px-5 py-3">
+                              <span className={member.role === 'VIEWER' ? 'text-neutral-400' : 'text-emerald-600 font-semibold'}>
+                                {member.role === 'VIEWER' ? 'Read-Only' : 'Create & Dial'}
+                              </span>
+                            </td>
+                            <td className="px-5 py-3">
+                              <span className={member.role === 'VIEWER' ? 'text-amber-600' : 'text-emerald-600 font-semibold'}>
+                                {member.role === 'VIEWER' ? 'Restricted' : 'Read/Write SQL'}
+                              </span>
+                            </td>
+                            <td className="px-5 py-3">
+                              <span className={member.role === 'ADMIN' ? 'text-purple-600 font-bold' : 'text-neutral-600'}>
+                                {member.role === 'ADMIN' ? 'Full Decrypt' : 'Surrogate Handles'}
+                              </span>
+                            </td>
+                            <td className="px-5 py-3 text-right">
+                              <button className="text-neutral-400 hover:text-neutral-700">
+                                <MoreVertical className="w-4 h-4 inline" />
+                              </button>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
               </div>
             )}
 
@@ -775,6 +1051,158 @@ export default function App() {
         </main>
       </div>
 
+      {/* AUTHENTICATION MODAL (LOGIN & SIGNUP FORMS) */}
+      {authModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-neutral-900/60 backdrop-blur-sm">
+          <div className="w-full max-w-md bg-white rounded-2xl border border-neutral-200 shadow-2xl p-6 relative">
+            <button 
+              onClick={() => setAuthModalOpen(false)}
+              className="absolute top-4 right-4 text-neutral-400 hover:text-neutral-700"
+            >
+              <X className="w-5 h-5" />
+            </button>
+
+            <div className="mb-6">
+              <div className="flex items-center space-x-2 mb-2">
+                <span className="h-3 w-3 rounded-full bg-neutral-900"></span>
+                <span className="text-lg font-extrabold text-neutral-900">cortex studio</span>
+              </div>
+              <h3 className="text-base font-bold text-neutral-900">
+                {authMode === 'login' ? 'Sign in to your account' : 'Create new account'}
+              </h3>
+              <p className="text-xs text-neutral-500">
+                {authMode === 'login' 
+                  ? 'Enter your credentials to access tunnels, databases & vault' 
+                  : 'Register a new identity and assign an RBAC access level'}
+              </p>
+            </div>
+
+            {authError && (
+              <div className="mb-4 p-3 rounded-xl bg-rose-50 border border-rose-200 flex items-center space-x-2 text-rose-700 text-xs">
+                <AlertCircle className="w-4 h-4 flex-shrink-0" />
+                <span>{authError}</span>
+              </div>
+            )}
+
+            <form onSubmit={handleAuthSubmit} className="space-y-3.5">
+              {authMode === 'signup' && (
+                <div>
+                  <label className="block text-xs font-semibold text-neutral-700 mb-1">Full Name</label>
+                  <div className="relative">
+                    <User className="w-4 h-4 text-neutral-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                    <input 
+                      type="text" 
+                      required
+                      value={authFullName}
+                      onChange={(e) => setAuthFullName(e.target.value)}
+                      placeholder="Jane Doe"
+                      className="w-full pl-9 pr-3 py-2 text-xs bg-neutral-50 rounded-xl border border-neutral-200 focus:outline-none focus:ring-1 focus:ring-neutral-400 text-neutral-800"
+                    />
+                  </div>
+                </div>
+              )}
+
+              <div>
+                <label className="block text-xs font-semibold text-neutral-700 mb-1">Email Address</label>
+                <div className="relative">
+                  <Mail className="w-4 h-4 text-neutral-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                  <input 
+                    type="email" 
+                    required
+                    value={authEmail}
+                    onChange={(e) => setAuthEmail(e.target.value)}
+                    placeholder="user@corp.internal"
+                    className="w-full pl-9 pr-3 py-2 text-xs bg-neutral-50 rounded-xl border border-neutral-200 focus:outline-none focus:ring-1 focus:ring-neutral-400 text-neutral-800"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-neutral-700 mb-1">Password</label>
+                <div className="relative">
+                  <Lock className="w-4 h-4 text-neutral-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                  <input 
+                    type="password" 
+                    required
+                    minLength={8}
+                    value={authPassword}
+                    onChange={(e) => setAuthPassword(e.target.value)}
+                    placeholder="••••••••••••"
+                    className="w-full pl-9 pr-3 py-2 text-xs bg-neutral-50 rounded-xl border border-neutral-200 focus:outline-none focus:ring-1 focus:ring-neutral-400 text-neutral-800"
+                  />
+                </div>
+              </div>
+
+              {authMode === 'signup' && (
+                <div>
+                  <label className="block text-xs font-semibold text-neutral-700 mb-1">Role / Access Level</label>
+                  <select 
+                    value={authRole}
+                    onChange={(e) => setAuthRole(e.target.value as any)}
+                    className="w-full px-3 py-2 text-xs bg-neutral-50 rounded-xl border border-neutral-200 focus:outline-none focus:ring-1 focus:ring-neutral-400 text-neutral-800 font-semibold"
+                  >
+                    <option value="ENGINEER">ENGINEER (Tunnels, DBs & Scoped Handles)</option>
+                    <option value="VIEWER">VIEWER (Read-Only Latency Monitoring)</option>
+                    <option value="MCP_AGENT">MCP_AGENT (AI Service Account)</option>
+                    <option value="ADMIN">ADMIN (Full System Control)</option>
+                  </select>
+                </div>
+              )}
+
+              <button 
+                type="submit" 
+                disabled={authLoading}
+                className="w-full bg-[#1c1b1f] hover:bg-neutral-800 text-white font-semibold text-xs py-2.5 rounded-xl shadow-sm transition-colors disabled:opacity-50 mt-2"
+              >
+                {authLoading ? 'Processing...' : (authMode === 'login' ? 'Sign In' : 'Create Account')}
+              </button>
+            </form>
+
+            <div className="mt-4 pt-4 border-t border-neutral-100 flex items-center justify-between text-xs text-neutral-500">
+              {authMode === 'login' ? (
+                <>
+                  <span>Don't have an account?</span>
+                  <button 
+                    onClick={() => { setAuthMode('signup'); setAuthError(null); }}
+                    className="font-semibold text-neutral-900 hover:underline"
+                  >
+                    Sign up
+                  </button>
+                </>
+              ) : (
+                <>
+                  <span>Already have an account?</span>
+                  <button 
+                    onClick={() => { setAuthMode('login'); setAuthError(null); }}
+                    className="font-semibold text-neutral-900 hover:underline"
+                  >
+                    Sign in
+                  </button>
+                </>
+              )}
+            </div>
+
+            {/* Quick Demo Credentials Pill */}
+            <div className="mt-4 p-2.5 rounded-xl bg-neutral-50 border border-neutral-200/80 text-[11px] text-neutral-600">
+              <div className="font-bold text-neutral-800 mb-0.5">Quick Demo Admin Access:</div>
+              <div className="font-mono text-[10px] text-neutral-500">Email: admin@cortex.internal</div>
+              <div className="font-mono text-[10px] text-neutral-500">Pass: CortexAdmin2026!</div>
+              <button 
+                type="button"
+                onClick={() => {
+                  setAuthEmail('admin@cortex.internal');
+                  setAuthPassword('CortexAdmin2026!');
+                  setAuthMode('login');
+                }}
+                className="mt-1.5 text-[10px] text-purple-700 hover:text-purple-900 font-bold underline"
+              >
+                Auto-fill Admin Credentials
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Backdrop for Navigation Drawer */}
       <div 
         className={`absolute inset-0 bg-neutral-900/40 z-40 transition-opacity backdrop-blur-[1px] ${drawerOpen ? '' : 'hidden'}`}
@@ -834,6 +1262,14 @@ export default function App() {
               <Bot className="w-4 h-4 mr-3 text-neutral-500" />
               <span>MCP AI Server</span>
             </button>
+
+            <button 
+              onClick={() => { setActiveTab('rbac'); setDrawerOpen(false); }}
+              className={`w-full flex items-center text-sm font-medium px-3 py-2 rounded-xl transition-colors ${activeTab === 'rbac' ? 'font-semibold text-neutral-900 bg-neutral-100/90' : 'text-neutral-600 hover:text-neutral-900'}`}
+            >
+              <Users className="w-4 h-4 mr-3 text-neutral-500" />
+              <span>RBAC & Access Control</span>
+            </button>
           </nav>
 
           <div className="mb-6">
@@ -861,16 +1297,36 @@ export default function App() {
         <div className="pt-4 border-t border-neutral-100 flex items-center justify-between px-2">
           <div className="flex items-center space-x-2.5">
             <div className="w-7 h-7 rounded-full bg-neutral-900 flex items-center justify-center text-white text-xs font-bold font-mono">
-              CX
+              {currentUser?.full_name ? currentUser.full_name.substring(0, 2).toUpperCase() : 'CX'}
             </div>
             <div className="leading-tight">
-              <span className="text-xs font-semibold text-neutral-800 truncate block">Root Session</span>
-              <span className="text-[10px] text-emerald-600 font-medium">RAM Encrypted</span>
+              <span className="text-xs font-semibold text-neutral-800 truncate block">
+                {currentUser?.full_name || 'Guest User'}
+              </span>
+              <span className="text-[10px] text-emerald-600 font-medium">
+                {currentUser ? `${currentUser.role} Session` : 'Unauthenticated'}
+              </span>
             </div>
           </div>
-          <button aria-label="Sign out" className="text-neutral-400 hover:text-neutral-700" type="button">
-            <LogOut className="w-4 h-4" />
-          </button>
+          {currentUser ? (
+            <button 
+              onClick={handleLogout}
+              aria-label="Sign out" 
+              className="text-neutral-400 hover:text-rose-600" 
+              type="button"
+            >
+              <LogOut className="w-4 h-4" />
+            </button>
+          ) : (
+            <button 
+              onClick={() => setAuthModalOpen(true)}
+              aria-label="Sign in" 
+              className="text-neutral-400 hover:text-neutral-700" 
+              type="button"
+            >
+              <Lock className="w-4 h-4" />
+            </button>
+          )}
         </div>
       </div>
     </div>
