@@ -4,12 +4,15 @@ import (
 	"embed"
 	"flag"
 	"fmt"
+	"io"
 	"io/fs"
 	"log"
 	"net"
 	"net/http"
 	"os"
+	"path/filepath"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/cortex-studio/cortex/internal/auth"
@@ -111,22 +114,56 @@ func main() {
 
 	distFS, err := fs.Sub(embeddedWeb, "dist")
 	if err == nil {
-		fileServer := http.FileServer(http.FS(distFS))
 		mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-			f, err := distFS.Open(r.URL.Path[1:])
-			if err == nil {
-				_ = f.Close()
-				fileServer.ServeHTTP(w, r)
-				return
+			// Security headers
+			w.Header().Set("X-Content-Type-Options", "nosniff")
+			w.Header().Set("X-Frame-Options", "SAMEORIGIN")
+			w.Header().Set("Referrer-Policy", "strict-origin-when-cross-origin")
+
+			cleanPath := strings.TrimPrefix(r.URL.Path, "/ui")
+			cleanPath = strings.TrimPrefix(cleanPath, "/")
+
+			// Serve static assets if exact file exists
+			if cleanPath != "" {
+				if f, err := distFS.Open(cleanPath); err == nil {
+					defer f.Close()
+					if strings.HasPrefix(cleanPath, "assets/") {
+						w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
+					}
+					// Let http.ServeContent determine Content-Type by extension
+					ext := filepath.Ext(cleanPath)
+					switch ext {
+					case ".js", ".mjs":
+						w.Header().Set("Content-Type", "application/javascript; charset=utf-8")
+					case ".css":
+						w.Header().Set("Content-Type", "text/css; charset=utf-8")
+					case ".json":
+						w.Header().Set("Content-Type", "application/json")
+					case ".svg":
+						w.Header().Set("Content-Type", "image/svg+xml")
+					case ".txt":
+						w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+					}
+					if rs, ok := f.(io.ReadSeeker); ok {
+						http.ServeContent(w, r, cleanPath, time.Now(), rs)
+						return
+					}
+				}
 			}
+
+			// SPA Fallback: serve index.html
 			indexFile, err := distFS.Open("index.html")
 			if err == nil {
-				_ = indexFile.Close()
-				r.URL.Path = "/"
-				fileServer.ServeHTTP(w, r)
-				return
+				defer indexFile.Close()
+				w.Header().Set("Content-Type", "text/html; charset=utf-8")
+				w.Header().Set("Cache-Control", "no-cache, no-store, must-revalidate")
+				if rs, ok := indexFile.(io.ReadSeeker); ok {
+					http.ServeContent(w, r, "index.html", time.Now(), rs)
+					return
+				}
 			}
-			fileServer.ServeHTTP(w, r)
+
+			http.NotFound(w, r)
 		})
 	}
 

@@ -1,0 +1,3 @@
+# Cortex Studio
+
+> Cortex Studio is a Zero-Knowledge Infrastructure Workbench designed for managing multi-hop network tunnels, exploring relational databases through secure bastions, and exposing Model Context Protocol (MCP) servers to AI agents.
