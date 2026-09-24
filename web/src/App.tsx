@@ -14,10 +14,10 @@ import {
   Copy,
   Check,
   AlertCircle,
-  Layers,
   Cpu,
   Terminal,
-  Globe
+  Globe,
+  ArrowRight
 } from 'lucide-react';
 import {
   Button,
@@ -135,8 +135,10 @@ export default function App() {
         const data = await res.json();
         setHasAdmin(data.has_admin);
         setAuthProviders(data.providers || []);
-        if (!data.has_admin) {
+        if (data.has_admin === false) {
           setAuthMode('initial_admin');
+        } else {
+          setAuthMode((prev) => (prev === 'initial_admin' ? 'login' : prev));
         }
       }
     } catch (e) {
@@ -287,6 +289,12 @@ export default function App() {
 
       const data = await res.json();
       if (!res.ok) {
+        // If admin is already provisioned, redirect user to login mode
+        if (data.error && data.error.includes('already provisioned')) {
+          setHasAdmin(true);
+          setAuthMode('login');
+          throw new Error('An administrator is already provisioned. Please enter your credentials to Sign In.');
+        }
         throw new Error(data.error || 'Authentication failed');
       }
 
@@ -458,7 +466,7 @@ export default function App() {
   // ==========================================
   // UNINITIALIZED CLUSTER -> ADMIN SETUP WIZARD
   // ==========================================
-  if (hasAdmin === false || authMode === 'initial_admin') {
+  if (hasAdmin === false) {
     return (
       <div className="w-full h-full bg-neutral-900 flex items-center justify-center p-6 select-none font-sans">
         <div className="w-full max-w-md bg-white rounded-3xl p-8 shadow-2xl space-y-6">
@@ -523,6 +531,17 @@ export default function App() {
               Initialize Cluster & Sign In
             </Button>
           </form>
+
+          <div className="pt-2 border-t border-neutral-100 text-center">
+            <button
+              type="button"
+              onClick={() => { setHasAdmin(true); setAuthMode('login'); setAuthError(null); }}
+              className="text-xs text-neutral-500 hover:text-neutral-900 transition-colors inline-flex items-center space-x-1 cursor-pointer font-medium"
+            >
+              <span>Already provisioned an admin? Switch to Sign In</span>
+              <ArrowRight className="w-3 h-3" />
+            </button>
+          </div>
         </div>
       </div>
     );
