@@ -80,13 +80,14 @@ func main() {
 
 	bus := kernel.NewEventBus()
 	registry := kernel.NewRegistry(bus)
+	authService := auth.NewAuthService()
 
 	pipelineEngine := tunnel.NewPipelineEngine()
 	telemetryMonitor := tunnel.NewTelemetryMonitor(pipelineEngine, 2*time.Second)
 
 	networkExt := network.NewNetworkExtension(pipelineEngine, telemetryMonitor)
 	dbExt := db.NewDBExplorerExtension(pipelineEngine)
-	mcpExt := mcp.NewMCPExtension(registry)
+	mcpExt := mcp.NewMCPExtension(registry, authService)
 
 	if err := registry.Register(networkExt); err != nil {
 		log.Fatalf("failed registering ext_network: %v", err)
@@ -97,8 +98,6 @@ func main() {
 	if err := registry.Register(mcpExt); err != nil {
 		log.Fatalf("failed registering ext_mcp: %v", err)
 	}
-
-	authService := auth.NewAuthService()
 
 	mux := http.NewServeMux()
 

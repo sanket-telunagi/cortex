@@ -49,23 +49,21 @@ type NetworkExtension struct {
 }
 
 func NewNetworkExtension(engine *tunnel.PipelineEngine, monitor *tunnel.TelemetryMonitor) *NetworkExtension {
-	ext := &NetworkExtension{
+	return &NetworkExtension{
 		engine:   engine,
 		monitor:  monitor,
 		chains:   make(map[string]ChainDefinition),
 		hops:     make(map[string]tunnel.HopConfig),
 		sessions: make(map[string]*ActiveSession),
 	}
-
-	// Pre-populate with realistic starter demo nodes
-	ext.registerDefaultHops()
-	return ext
 }
 
-func (n *NetworkExtension) ID() string          { return "ext_network" }
-func (n *NetworkExtension) Name() string        { return "Universal Network & Chaining Hub" }
-func (n *NetworkExtension) Version() string     { return "0.1.0" }
-func (n *NetworkExtension) Description() string { return "Multi-hop SSH and Proxy tunnel engine with per-hop latency telemetry" }
+func (n *NetworkExtension) ID() string      { return "ext_network" }
+func (n *NetworkExtension) Name() string    { return "Universal Network & Chaining Hub" }
+func (n *NetworkExtension) Version() string { return "0.2.0" }
+func (n *NetworkExtension) Description() string {
+	return "Multi-hop SSH and Proxy tunnel engine with per-hop latency telemetry"
+}
 
 func (n *NetworkExtension) Init(ctx context.Context, bus *kernel.EventBus) error {
 	n.bus = bus
@@ -115,6 +113,21 @@ func (n *NetworkExtension) handleHops(w http.ResponseWriter, r *http.Request) {
 		n.mu.Unlock()
 		w.WriteHeader(http.StatusCreated)
 		_ = json.NewEncoder(w).Encode(map[string]string{"status": "registered", "id": hop.ID})
+		return
+	}
+
+	if r.Method == http.MethodDelete {
+		var req struct {
+			ID string `json:"id"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		n.mu.Lock()
+		delete(n.hops, req.ID)
+		n.mu.Unlock()
+		_ = json.NewEncoder(w).Encode(map[string]string{"status": "deleted", "id": req.ID})
 		return
 	}
 
@@ -309,65 +322,5 @@ func (n *NetworkExtension) MCPTools() []kernel.MCPToolDefinition {
 				return metric, nil
 			},
 		},
-	}
-}
-
-func (n *NetworkExtension) registerDefaultHops() {
-	defaultHops := []tunnel.HopConfig{
-		{
-			ID:   "hop-edge-proxy",
-			Name: "Cloudflare/Edge SOCKS5 Proxy",
-			Type: tunnel.HopTypeSOCKS5,
-			Host: "1.1.1.1",
-			Port: 1080,
-		},
-		{
-			ID:   "hop-aws-bastion",
-			Name: "AWS VPC Bastion (us-east-1)",
-			Type: tunnel.HopTypeSSH,
-			Host: "10.0.1.50",
-			Port: 22,
-			Auth: tunnel.HopAuth{Username: "ec2-user"},
-		},
-		{
-			ID:   "hop-k8s-jump",
-			Name: "Internal K8s Jump Host (eu-central)",
-			Type: tunnel.HopTypeSSH,
-			Host: "192.168.1.100",
-			Port: 2222,
-			Auth: tunnel.HopAuth{Username: "devops"},
-		},
-		{
-			ID:   "hop-db-direct",
-			Name: "Core Production Database (RDS Postgres)",
-			Type: tunnel.HopTypeDirect,
-			Host: "10.0.12.99",
-			Port: 5432,
-		},
-	}
-
-	for _, h := range defaultHops {
-		n.hops[h.ID] = h
-		n.monitor.RegisterHop(h)
-	}
-
-	n.chains["chain-prod-db"] = ChainDefinition{
-		ID:          "chain-prod-db",
-		Name:        "Production RDS Access Pipeline",
-		Description: "Multi-hop chain traversing edge SOCKS5 proxy into AWS bastion into internal RDS Postgres",
-		Hops:        []tunnel.HopConfig{defaultHops[0], defaultHops[1]},
-		TargetAddr:  "10.0.12.99:5432",
-	}
-	n.monitor.TrackChain("chain-prod-db", n.chains["chain-prod-db"].Hops)
-
-	n.sessions["tun-sess-8812"] = &ActiveSession{
-		SessionID:   "tun-sess-8812",
-		ChainID:     "chain-prod-db",
-		TargetAddr:  "10.0.12.99:5432",
-		ConnectedAt: time.Now().Add(-24 * time.Minute),
-		BytesTx:     4194304,
-		BytesRx:     16777216,
-		LatencyMs:   13.8,
-		Status:      "ESTABLISHED",
 	}
 }
