@@ -14,10 +14,8 @@ import {
   Copy,
   Check,
   AlertCircle,
-  Sparkles,
   Layers,
   Cpu,
-  RefreshCw,
   Terminal,
   Globe
 } from 'lucide-react';
@@ -27,9 +25,7 @@ import {
   Card,
   CardHeader,
   CardTitle,
-  CardDescription,
   CardContent,
-  CardFooter,
   Input,
   Select,
   Textarea,
@@ -76,7 +72,7 @@ export default function App() {
   
   // Auth & Cluster Status
   const [hasAdmin, setHasAdmin] = useState<boolean | null>(null);
-  const [authProviders, setAuthProviders] = useState<any[]>([]);
+  const [authProviders, setAuthProviders] = useState<Array<{ name: string; display_name: string; enabled: boolean }>>([]);
   const [currentUser, setCurrentUser] = useState<AuthUser | null>(null);
   const [authToken, setAuthToken] = useState<string | null>(localStorage.getItem('cortex_token'));
   
@@ -115,7 +111,6 @@ export default function App() {
   const [sqlQuery, setSqlQuery] = useState('');
   const [queryRunning, setQueryRunning] = useState(false);
   const [queryResult, setQueryResult] = useState<{ columns: string[]; rows: any[] } | null>(null);
-  const [queryError, setQueryError] = useState<string | null>(null);
 
   // Vault Secrets State (Starts clean)
   const [vaultSecrets, setVaultSecrets] = useState<VaultSecret[]>([]);
@@ -397,7 +392,6 @@ export default function App() {
   const handleRunSQL = () => {
     if (!sqlQuery.trim()) return;
     setQueryRunning(true);
-    setQueryError(null);
 
     setTimeout(() => {
       setQueryRunning(false);
@@ -643,7 +637,7 @@ export default function App() {
                 size="sm"
                 fullWidth
                 icon={<Globe className="w-3.5 h-3.5 text-blue-600" />}
-                onClick={() => alert('Microsoft Entra ID (MSAuth) connector is configured and ready for OAuth callback.')}
+                onClick={() => alert(`Microsoft Entra ID (MSAuth) connector is configured and ready for OAuth callback.`)}
               >
                 MSAuth
               </Button>
@@ -652,7 +646,7 @@ export default function App() {
                 size="sm"
                 fullWidth
                 icon={<Terminal className="w-3.5 h-3.5 text-neutral-700" />}
-                onClick={() => alert('GitHub OAuth SSO connector is ready for client ID / secret injection.')}
+                onClick={() => alert(`GitHub OAuth SSO connector is ready for client ID / secret injection.`)}
               >
                 GitHub SSO
               </Button>
